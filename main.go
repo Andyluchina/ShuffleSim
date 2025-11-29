@@ -68,7 +68,7 @@ func main() {
 			fmt.Println(err)
 			return
 		}
-		auditor.ReportPhase_AppendEntryToDatabase(CertAuditor, entry, numClients, i, &database)
+		auditor.ReportPhase_AppendEntryToDatabase(CertAuditor, entry, shuffle_keyset, i, &database)
 		//// client shares the secrete in a encrypted way
 		// client.SecreteShare(CertAuditor, clients[i])
 	}
