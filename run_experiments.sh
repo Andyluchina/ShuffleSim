@@ -1,14 +1,14 @@
 # go build main.go
-./main 500 1
-./main 500 2
-./main 500 5
-./main 500 10
-./main 500 15
-./main 500 20
-./main 1000 1
-./main 1000 2
-./main 1000 5
-./main 1000 10
+# ./main 500 1
+# ./main 500 2
+# ./main 500 5
+# ./main 500 10
+# ./main 500 15
+# ./main 500 20
+# ./main 1000 1
+# ./main 1000 2
+# ./main 1000 5
+# ./main 1000 10
 ./main 1000 15
 ./main 1000 20
 ./main 2000 1
