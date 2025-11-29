@@ -74,6 +74,15 @@ func main() {
 	}
 	// prepopulate the shuffers field so that all shufflers are fixed
 	fmt.Println("Reporting phase complete, Enter shuffling phase")
+	if serialized, err := json.Marshal(database); err == nil {
+		const bytesPerGB = 1024 * 1024 * 1024
+		fmt.Printf("database size: %.4f GB\n", float64(len(serialized))/float64(bytesPerGB))
+		if err := os.WriteFile("database.json", serialized, 0o644); err != nil {
+			fmt.Println("failed to write database to disk:", err)
+		}
+	} else {
+		fmt.Println("failed to compute database size:", err)
+	}
 	//shuffling stage
 	for i := 0; i < number_of_shufflers; i++ {
 		////***** preparing for zk proof

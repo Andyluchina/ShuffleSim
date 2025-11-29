@@ -610,10 +610,10 @@ func ClientShuffle(certauditor *auditor.Auditor, reportingClient *auditor.Client
 	fmt.Print(reportingClient.ID)
 	fmt.Println(" shuffling the entries, this is where we generate permuation matrix")
 
-	permutationMatrix := zklib.GeneratePermutationMatrix(len(database.Entries))
-	/// do the normal shuffle with the permutation matrix
+	permutation := zklib.GeneratePermutation(len(database.Entries))
+	/// do the normal shuffle with the permutation indices
 	var err error
-	database.Entries, err = permuteDatabaseWithMatrix(permutationMatrix, database.Entries)
+	database.Entries, err = permuteDatabase(permutation, database.Entries)
 	if err != nil {
 		log.Fatalf("%v", err)
 		return 0
@@ -711,19 +711,19 @@ func ClientShuffle(certauditor *auditor.Auditor, reportingClient *auditor.Client
 	}
 
 	// *** zero knowledge shuffling proof
-	inverse_permutationMatrix, err := zklib.InversePermutationMatrix(permutationMatrix)
+	inversePermutation, err := zklib.InversePermutation(permutation)
 	if err != nil {
 		log.Fatalf("%v", err)
 		return 0
 	}
 	// fmt.Println(reportingClient.H_shuffle)
 
-	X_primes_permutated, err := permuteByteSlicesWithMatrix(permutationMatrix, X_primes)
+	X_primes_permutated, err := permuteByteSlices(permutation, X_primes)
 	if err != nil {
 		log.Fatalf("%v", err)
 		return 0
 	}
-	Y_primes_permutated, err := permuteByteSlicesWithMatrix(permutationMatrix, Y_primes)
+	Y_primes_permutated, err := permuteByteSlices(permutation, Y_primes)
 	if err != nil {
 		log.Fatalf("%v", err)
 		return 0
@@ -760,7 +760,7 @@ func ClientShuffle(certauditor *auditor.Auditor, reportingClient *auditor.Client
 	// R_R mean B in the paper btw
 	// generate commitments
 	// security parameters
-	// Generate a permutation matrix of size 5.
+	// Generate a permutation of size 5.
 	elapsed1 := time.Since(start).Seconds()
 	n := len(database.Entries) // matrix size
 	l_t := 160
@@ -820,11 +820,16 @@ func ClientShuffle(certauditor *auditor.Auditor, reportingClient *auditor.Client
 			if err != nil {
 				panic(err)
 			}
-			backward_index, _ := zklib.BackwardMapping(i, permutationMatrix)
+			backward_index, err := zklib.BackwardMapping(i, inversePermutation)
+			if err != nil {
+				log.Fatalf("%v", err)
+				return 0
+			}
 			d_needed := ds[backward_index]
 			d_needed = new(big.Int).Mul(d_needed, big.NewInt(2))
-			commitments[i] = zklib.Generate_commitment(gs, zklib.IntToBigInt(inverse_permutationMatrix[i]), d_needed, new_r, N) // Fix: Add N as the last argument
-			rs = append(rs, zklib.SetBigIntWithBytes(new_r))                                                                    // Fix: Assign the result of append to rs
+			unitVector := zklib.UnitVector(n, inversePermutation[i])
+			commitments[i] = zklib.Generate_commitment(gs, zklib.IntToBigInt(unitVector), d_needed, new_r, N)
+			rs = append(rs, zklib.SetBigIntWithBytes(new_r)) // Fix: Assign the result of append to rs
 		}
 	}
 
@@ -971,7 +976,11 @@ func ClientShuffle(certauditor *auditor.Auditor, reportingClient *auditor.Client
 	// generate the responses
 	fs := make([]*big.Int, n)
 	for i := 0; i < n; i++ {
-		t_pi_j, _ := zklib.ForwardMapping(i, permutationMatrix)
+		t_pi_j, err := zklib.ForwardMapping(i, permutation)
+		if err != nil {
+			log.Fatalf("%v", err)
+			return 0
+		}
 		fs[i] = new(big.Int).Add(zklib.SetBigIntWithBytes(lambdas[t_pi_j]), ds[i])
 	}
 
@@ -988,7 +997,7 @@ func ClientShuffle(certauditor *auditor.Auditor, reportingClient *auditor.Client
 		Z_k := zklib.SetBigIntWithBytes(Bs[k])
 		for l := 0; l < n; l++ {
 			R_l_k_one := zklib.SetBigIntWithBytes(R_l_k[l][k])
-			pi_l, err := zklib.ForwardMapping(l, permutationMatrix)
+			pi_l, err := zklib.ForwardMapping(l, permutation)
 			if err != nil {
 				log.Fatalf("%v", err)
 				return 0
@@ -1003,7 +1012,7 @@ func ClientShuffle(certauditor *auditor.Auditor, reportingClient *auditor.Client
 	Z_prime := zklib.SetBigIntWithBytes(B_prime)
 
 	for i := 0; i < n; i++ {
-		pi_l, err := zklib.ForwardMapping(i, permutationMatrix)
+		pi_l, err := zklib.ForwardMapping(i, permutation)
 		if err != nil {
 			log.Fatalf("%v", err)
 			return 0
@@ -1147,72 +1156,34 @@ func ExtractCertsFromEntries(database *auditor.Database) [][][]byte {
 	return res
 }
 
-// permuteByteSlicesWithMatrix takes a permutation matrix and an array of byte slices,
-// then permutes the array according to the matrix.
-func permuteByteSlicesWithMatrix(matrix [][]int, byteSlices [][]byte) ([][]byte, error) {
-	// Check if the matrix is square and matches the length of the byte slices array
-	if len(matrix) == 0 || len(matrix) != len(byteSlices) {
-		return nil, fmt.Errorf("matrix and byte slices array size mismatch or empty matrix")
+// permuteByteSlices takes a permutation index slice and permutes the byte slices accordingly.
+func permuteByteSlices(permutation []int, byteSlices [][]byte) ([][]byte, error) {
+	if len(permutation) != len(byteSlices) {
+		return nil, fmt.Errorf("permutation and byte slice size mismatch")
 	}
-
-	n := len(matrix)
-	for _, row := range matrix {
-		if len(row) != n {
-			return nil, fmt.Errorf("non-square matrix")
+	permutedByteSlices := make([][]byte, len(byteSlices))
+	for i, idx := range permutation {
+		if idx < 0 || idx >= len(byteSlices) {
+			return nil, fmt.Errorf("permutation index out of range")
 		}
+		permutedByteSlices[i] = byteSlices[idx]
 	}
-
-	// Initialize the permuted array of byte slices
-	permutedByteSlices := make([][]byte, n)
-
-	// Apply the permutation described by the matrix to the byte slices
-	for i, row := range matrix {
-		for j, val := range row {
-			if val == 1 {
-				if i >= n || j >= n {
-					return nil, fmt.Errorf("index out of range in permutation matrix")
-				}
-				permutedByteSlices[i] = byteSlices[j]
-				break
-			}
-		}
-	}
-
 	return permutedByteSlices, nil
 }
 
-// permuteByteSlicesWithMatrix takes a permutation matrix and an array of byte slices,
-// then permutes the array according to the matrix.
-func permuteDatabaseWithMatrix(matrix [][]int, Entries []*auditor.ReportingEntry) ([]*auditor.ReportingEntry, error) {
-	// Check if the matrix is square and matches the length of the byte slices array
-	if len(matrix) == 0 || len(matrix) != len(Entries) {
-		return nil, fmt.Errorf("matrix and byte slices array size mismatch or empty matrix")
+// permuteDatabase takes a permutation index slice and permutes the entry list.
+func permuteDatabase(permutation []int, Entries []*auditor.ReportingEntry) ([]*auditor.ReportingEntry, error) {
+	if len(permutation) != len(Entries) {
+		return nil, fmt.Errorf("permutation and entries size mismatch")
 	}
-
-	n := len(matrix)
-	for _, row := range matrix {
-		if len(row) != n {
-			return nil, fmt.Errorf("non-square matrix")
+	permutedEntries := make([]*auditor.ReportingEntry, len(Entries))
+	for i, idx := range permutation {
+		if idx < 0 || idx >= len(Entries) {
+			return nil, fmt.Errorf("permutation index out of range")
 		}
+		permutedEntries[i] = Entries[idx]
 	}
-
-	// Initialize the permuted array of byte slices
-	permutedByteSlices := make([]*auditor.ReportingEntry, n)
-
-	// Apply the permutation described by the matrix to the byte slices
-	for i, row := range matrix {
-		for j, val := range row {
-			if val == 1 {
-				if i >= n || j >= n {
-					return nil, fmt.Errorf("index out of range in permutation matrix")
-				}
-				permutedByteSlices[i] = Entries[j]
-				break
-			}
-		}
-	}
-
-	return permutedByteSlices, nil
+	return permutedEntries, nil
 }
 
 // Shuffle securely shuffles the order of the input slice.

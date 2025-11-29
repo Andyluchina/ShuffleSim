@@ -21,23 +21,9 @@ func IntToBigInt(n []int) []*big.Int {
 	return bigInts
 }
 
-// generatePermutationMatrix generates a permutation matrix of size n using cryptographically secure randomness.
-func GeneratePermutationMatrix(n int) [][]int {
-	// Initialize the matrix with zeros.
-	matrix := make([][]int, n)
-	for i := range matrix {
-		matrix[i] = make([]int, n)
-	}
-
-	// Generate a cryptographically secure permutation of 0 to n-1.
-	perm := securePerm(n)
-
-	// Fill the matrix with 1s according to the permutation.
-	for i, val := range perm {
-		matrix[i][val] = 1
-	}
-
-	return matrix
+// GeneratePermutation returns a permutation of size n using cryptographically secure randomness.
+func GeneratePermutation(n int) []int {
+	return securePerm(n)
 }
 
 // securePerm generates a cryptographically secure permutation of n integers.
@@ -65,57 +51,47 @@ func PrintMatrix(matrix [][]int) {
 	}
 }
 
-// inversePermutationMatrix computes the inverse of a permutation matrix.
-func InversePermutationMatrix(matrix [][]int) ([][]int, error) {
-	n := len(matrix)
-	// Initialize the inverse matrix with zeros
-	inverseMatrix := make([][]int, n)
-	for i := 0; i < n; i++ {
-		inverseMatrix[i] = make([]int, n)
-	}
-
-	// Fill in the inverse matrix
-	for rowIndex, row := range matrix {
-		found := false
-		for colIndex, val := range row {
-			if val == 1 {
-				if found { // Ensure there's only one '1' per row
-					return nil, fmt.Errorf("invalid permutation matrix: multiple 1s in row")
-				}
-				if inverseMatrix[colIndex][rowIndex] == 1 {
-					return nil, fmt.Errorf("invalid permutation matrix: multiple 1s in column")
-				}
-				inverseMatrix[colIndex][rowIndex] = 1
-				found = true
-			}
+// InversePermutation computes the inverse permutation represented as an index slice.
+func InversePermutation(perm []int) ([]int, error) {
+	n := len(perm)
+	inverse := make([]int, n)
+	seen := make([]bool, n)
+	for i, v := range perm {
+		if v < 0 || v >= n {
+			return nil, fmt.Errorf("permutation value out of range")
 		}
-		if !found {
-			return nil, fmt.Errorf("invalid permutation matrix: no 1 found in row")
+		if seen[v] {
+			return nil, fmt.Errorf("duplicate permutation value")
 		}
+		inverse[v] = i
+		seen[v] = true
 	}
-
-	return inverseMatrix, nil
+	return inverse, nil
 }
 
-func ForwardMapping(index int, matrix [][]int) (int, error) {
-	row := matrix[index]
-	for i, val := range row {
-		if val == 1 {
-			return i, nil
-		}
+// ForwardMapping returns the original index mapped to the provided position.
+func ForwardMapping(index int, perm []int) (int, error) {
+	if index < 0 || index >= len(perm) {
+		return -1, fmt.Errorf("index out of range")
 	}
-	return -1, fmt.Errorf("no 1 found in row")
+	return perm[index], nil
 }
 
-func BackwardMapping(index int, matrix [][]int) (int, error) {
-	invm, _ := InversePermutationMatrix(matrix)
-	row := invm[index]
-	for i, val := range row {
-		if val == 1 {
-			return i, nil
-		}
+// BackwardMapping returns the permuted position for the provided original index.
+func BackwardMapping(index int, inversePerm []int) (int, error) {
+	if index < 0 || index >= len(inversePerm) {
+		return -1, fmt.Errorf("index out of range")
 	}
-	return -1, fmt.Errorf("no 1 found in row")
+	return inversePerm[index], nil
+}
+
+// UnitVector returns a one-hot vector of the given length with 1 at index.
+func UnitVector(length, index int) []int {
+	vec := make([]int, length)
+	if index >= 0 && index < length {
+		vec[index] = 1
+	}
+	return vec
 }
 
 func isGenerator(g *big.Int, p *big.Int, q *big.Int) bool {
