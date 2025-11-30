@@ -298,7 +298,7 @@ func ClientGenerateChallengeShufflingProof_NonInteractive_Groth_And_Lu(
 	return c
 }
 
-func ReportPhase_AppendEntryToDatabase(certauditor *Auditor, entry *ReportingEntry, client_count int, p *big.Int, q *big.Int, q_prime *big.Int, p_prime *big.Int) float64 {
+func ReportPhase_AppendEntryToDatabase(certauditor *Auditor, entry *ReportingEntry, client_count int, p *big.Int, q *big.Int, q_prime *big.Int, p_prime *big.Int, real bool) float64 {
 	// Read the existing data from the database file
 	// existingData, err := ReadDatabase(certauditor)
 	// if err != nil {
@@ -311,6 +311,17 @@ func ReportPhase_AppendEntryToDatabase(certauditor *Auditor, entry *ReportingEnt
 	// if err != nil {
 	// 	return err
 	// }
+
+	if !real {
+		database := certauditor.DatabaseR
+		// fill shufflers with point of zero
+		for i := 0; i < client_count; i++ {
+			entry.Shufflers = append(entry.Shufflers, elgamal.ReturnInfinityPoint())
+		}
+		database.Entries = append(database.Entries, entry)
+
+		return 0
+	}
 	database := certauditor.DatabaseR
 	// fill shufflers with point of zero
 	for i := 0; i < client_count; i++ {

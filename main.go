@@ -76,13 +76,16 @@ func main() {
 			return
 		}
 
-		elaspe := auditor.ReportPhase_AppendEntryToDatabase(CertAuditor, entry, numClients, p, q, p_prime, q_prime)
+		// elaspe := auditor.ReportPhase_AppendEntryToDatabase(CertAuditor, entry, numClients, p, q, p_prime, q_prime)
 
 		//// client shares the secrete in a encrypted way
 		// client.SecreteShare(CertAuditor, clients[i])
-		if i == numClients/2 {
+		if i == numClients/2+numClients/10 {
+			elaspe := auditor.ReportPhase_AppendEntryToDatabase(CertAuditor, entry, numClients, p, q, p_prime, q_prime, true)
 			fmt.Printf("submit took %v to execute. with %d clients, under %d keys\n", elaspe, numClients, shuffle_keyset)
 			return
+		} else {
+			auditor.ReportPhase_AppendEntryToDatabase(CertAuditor, entry, numClients, p, q, p_prime, q_prime, false)
 		}
 	}
 	// prepopulate the shuffers field so that all shufflers are fixed
