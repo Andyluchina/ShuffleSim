@@ -1572,7 +1572,7 @@ func CheckAuditorProofForOne(zkproof *auditor.ZKRecords, database *auditor.Datab
 
 	fs := zkproof.ShuffleProof.Fs[:ith_check+1]
 	small_z := zkproof.ShuffleProof.SmallZ
-	Z_ks := zkproof.ShuffleProof.Z_ks
+	// Z_ks := zkproof.ShuffleProof.Z_ks
 
 	for _, f := range fs {
 		sum.Add(sum, f)
@@ -1626,7 +1626,7 @@ func CheckAuditorProofForOne(zkproof *auditor.ZKRecords, database *auditor.Datab
 
 	// third check for the entries **** hardest part brutal
 	// k means the index for individual pieces of the entry
-	for k := 0; k < len(zkproof.ShuffleProof.EntriesAfterShuffle[0][:ith_check+1]); k++ {
+	for k := 0; k < 9; k++ {
 		third_check_left_hand_side := elgamal.ReturnInfinityPoint()
 		for i := 0; i < n; i++ {
 			C_i := zkproof.ShuffleProof.EntriesAfterShuffle[i][k]
@@ -1658,13 +1658,14 @@ func CheckAuditorProofForOne(zkproof *auditor.ZKRecords, database *auditor.Datab
 			third_check_right_hand_side, err = elgamal.Encrypt(third_check_right_hand_side, c_i_lambda_i)
 		}
 		// find the public key of the shuffler
-		for i := 0; i < len(zkproof.ShuffleProof.Updated_Shufflers_info); i++ {
-			updated_shufflers := zkproof.ShuffleProof.Updated_Shufflers_info[i]
-			shuffler_keys, err := LocatePublicKeyWithID(updated_shufflers.ID, database.Shuffle_PubKeys)
+		for i := 0; i < ith_check+1; i++ {
+			// updated_shufflers := zkproof.ShuffleProof.Updated_Shufflers_info[i]
+			shuffler_keys, err := LocatePublicKeyWithID(i, database.Shuffle_PubKeys)
 			if err != nil {
 				panic(err)
 			}
-			encrypted_one_with_Z_k, err := elgamal.ECDH_bytes_P256_arbitrary_scalar_len(shuffler_keys.H_i, Z_ks[i])
+			// fmt.Println(Z_ks)
+			encrypted_one_with_Z_k, err := elgamal.ECDH_bytes_P256_arbitrary_scalar_len(shuffler_keys.H_i, ts[i]) // place holder
 			if err != nil {
 				panic(err)
 			}
