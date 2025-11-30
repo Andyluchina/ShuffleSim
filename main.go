@@ -13,6 +13,7 @@ import (
 	"time"
 	"web_cert_reporting_faultTolerantChainingZK_NonInteractive/auditor"
 	"web_cert_reporting_faultTolerantChainingZK_NonInteractive/client"
+	"web_cert_reporting_faultTolerantChainingZK_NonInteractive/safeprime"
 
 	"github.com/coinbase/kryptology/pkg/core/curves"
 )
@@ -66,15 +67,23 @@ func main() {
 	CertAuditor.ZKDatabaseR = &zkdatabase
 	// database.Shuffle_PubKeys
 	fmt.Println("shufflers: ", len(database.Shuffle_PubKeys))
+	oddprimes := safeprime.GeneratePrimesWithout2(1 << 15)
+	p, q, p_prime, q_prime, err := safeprime.GenerateGroupSubgroup(160, 15, 140, oddprimes)
 	for i := 0; i < numClients; i++ {
 		entry, err := client.CreateInitialEntry(clients[i])
 		if err != nil {
 			fmt.Println(err)
 			return
 		}
-		auditor.ReportPhase_AppendEntryToDatabase(CertAuditor, entry, shuffle_keyset, i)
+
+		elaspe := auditor.ReportPhase_AppendEntryToDatabase(CertAuditor, entry, numClients, p, q, p_prime, q_prime)
+
 		//// client shares the secrete in a encrypted way
 		// client.SecreteShare(CertAuditor, clients[i])
+		if i == numClients/2 {
+			fmt.Printf("submit took %v to execute. with %d clients, under %d keys\n", elaspe, numClients, shuffle_keyset)
+			return
+		}
 	}
 	// prepopulate the shuffers field so that all shufflers are fixed
 	fmt.Println("Reporting phase complete, Enter shuffling phase")

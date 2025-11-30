@@ -21,6 +21,19 @@ func IntToBigInt(n []int) []*big.Int {
 	return bigInts
 }
 
+func GenerateIdentityMatrix(n int) []int {
+	if n <= 0 {
+		return nil
+	}
+
+	identity := make([]int, n)
+	for i := range identity {
+		identity[i] = i
+	}
+
+	return identity
+}
+
 // GeneratePermutation returns a permutation of size n using cryptographically secure randomness.
 func GeneratePermutation(n int) []int {
 	return securePerm(n)
