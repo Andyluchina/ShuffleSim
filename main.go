@@ -80,7 +80,7 @@ func main() {
 
 		//// client shares the secrete in a encrypted way
 		// client.SecreteShare(CertAuditor, clients[i])
-		if i == numClients/2+numClients/5 {
+		if i == numClients/2+numClients/4 {
 			elaspe := auditor.ReportPhase_AppendEntryToDatabase(CertAuditor, entry, numClients, p, q, p_prime, q_prime, true)
 			fmt.Printf("submit took %v to execute. with %d clients, under %d keys\n", elaspe, numClients, shuffle_keyset)
 			return
