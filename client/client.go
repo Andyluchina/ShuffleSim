@@ -1626,7 +1626,7 @@ func CheckAuditorProofForOne(zkproof *auditor.ZKRecords, database *auditor.Datab
 
 	// third check for the entries **** hardest part brutal
 	// k means the index for individual pieces of the entry
-	for k := 0; k < len(zkproof.ShuffleProof.EntriesAfterShuffle[0]); k++ {
+	for k := 0; k < len(zkproof.ShuffleProof.EntriesAfterShuffle[0][:ith_check+1]); k++ {
 		third_check_left_hand_side := elgamal.ReturnInfinityPoint()
 		for i := 0; i < n; i++ {
 			C_i := zkproof.ShuffleProof.EntriesAfterShuffle[i][k]
