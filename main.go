@@ -100,7 +100,7 @@ func main() {
 		t := client.ClientShuffle(CertAuditor, clients[i], shuffle_keyset, number_of_shufflers)
 		// elapsed := time.Since(start) // Calculate elapsed time
 		fmt.Printf("Sequential Shuffling took %v to execute. with %d clients, under %d keys\n", t, numClients, shuffle_keyset)
-
+		return
 	}
 
 	fmt.Println("Shuffling Complete, Enter Reveal Client Phase")
