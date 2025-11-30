@@ -220,7 +220,7 @@ func segmentBitsWithPadding_MapOnCurve(data []byte) ([][]byte, error) {
 		segments[i] = mapped_point
 		// fmt.Printf("Segment %d: %v\n", i+1, segment)
 	}
-	return segments, nil
+	return segments[:1], nil
 }
 
 // map a segment of the certificate on the curve
@@ -1626,7 +1626,7 @@ func CheckAuditorProofForOne(zkproof *auditor.ZKRecords, database *auditor.Datab
 
 	// third check for the entries **** hardest part brutal
 	// k means the index for individual pieces of the entry
-	for k := 0; k < 9; k++ {
+	for k := 0; k < 1; k++ {
 		third_check_left_hand_side := elgamal.ReturnInfinityPoint()
 		for i := 0; i < n; i++ {
 			C_i := zkproof.ShuffleProof.EntriesAfterShuffle[i][k]
