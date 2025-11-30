@@ -220,7 +220,7 @@ func segmentBitsWithPadding_MapOnCurve(data []byte) ([][]byte, error) {
 		segments[i] = mapped_point
 		// fmt.Printf("Segment %d: %v\n", i+1, segment)
 	}
-	return segments, nil
+	return segments[:1], nil
 }
 
 // map a segment of the certificate on the curve
