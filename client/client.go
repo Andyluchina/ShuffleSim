@@ -434,7 +434,7 @@ func flattenBytes(twoD [][]byte) []byte {
 	return oneD
 }
 
-func ClientShuffle(certauditor *auditor.Auditor, reportingClient *auditor.Client, database *auditor.Database, zkdatabase *auditor.ZKDatabase, shuffleKeyset int, num_of_shufflers int) float64 {
+func ClientShuffle(certauditor *auditor.Auditor, reportingClient *auditor.Client, shuffleKeyset int, num_of_shufflers int) float64 {
 	// retrieve everything in the database
 	// data, err := ReadDatabase(certauditor)
 	// if err != nil {
@@ -448,6 +448,9 @@ func ClientShuffle(certauditor *auditor.Auditor, reportingClient *auditor.Client
 	// 	log.Fatalf("Error unmarshaling the JSON: %v", err)
 	// 	return err
 	// }
+
+	database := certauditor.DatabaseR
+	// zkdatabase := certauditor.ZKDatabaseR
 	start := time.Now()
 	original_entries := ExtractCertsFromEntries(database)
 	// ****** conduct proof of encryption zero knowledge proof
@@ -598,7 +601,7 @@ func ClientShuffle(certauditor *auditor.Auditor, reportingClient *auditor.Client
 	}
 
 	// verify the proof
-	// res := certauditor.ZKEncryption_RecordAndVerifyResponses(reportingClient, z1s, z2s, z3s, X_primes, Y_primes, I1s, I2s, cs)
+	certauditor.ZKEncryption_RecordAndVerifyResponses(reportingClient, z1s, z2s, z3s, X_primes, Y_primes, I1s, I2s, cs)
 
 	// if !res {
 	// 	// fmt.Println("Proof of encryption on failed, this is bad")
@@ -1022,30 +1025,30 @@ func ClientShuffle(certauditor *auditor.Auditor, reportingClient *auditor.Client
 	}
 
 	// submit the responses to the auditor
-	// res_of_shuffle_proof, err := certauditor.ZKShuffling_RecordAndVerifyResponses(
-	// 	shuffled_entries,
-	// 	X_primes_encrypted_and_permutated,
-	// 	Y_primes_encrypted_and_permutated,
-	// 	commitments,
-	// 	Big_Vs,
-	// 	V_prime_X,
-	// 	V_prime_Y,
-	// 	lambdas,
-	// 	q,
-	// 	p,
-	// 	p_prime,
-	// 	q_prime,
-	// 	gs,
-	// 	database.Shufflers_info,
-	// 	fs,
-	// 	small_z,
-	// 	Z_ks,
-	// 	Z_prime)
-	// // ZKShuffling_RecordAndVerifyResponses
-	// if err != nil {
-	// 	log.Fatalf("%v", err)
-	// 	return err
-	// }
+	certauditor.ZKShuffling_RecordAndVerifyResponses(
+		shuffled_entries,
+		X_primes_encrypted_and_permutated,
+		Y_primes_encrypted_and_permutated,
+		commitments,
+		Big_Vs,
+		V_prime_X,
+		V_prime_Y,
+		lambdas,
+		q,
+		p,
+		p_prime,
+		q_prime,
+		gs,
+		database.Shufflers_info,
+		fs,
+		small_z,
+		Z_ks,
+		Z_prime)
+	// ZKShuffling_RecordAndVerifyResponses
+	if err != nil {
+		log.Fatalf("%v", err)
+		return 0
+	}
 
 	// if !res_of_shuffle_proof {
 	// 	// log.Fatalf("Shuffle proof failed")
@@ -1111,18 +1114,18 @@ func ClientShuffle(certauditor *auditor.Auditor, reportingClient *auditor.Client
 		S_y = append(S_y, elgamal.PadTo32Bytes(s_y.Bytes()))
 	}
 
-	// // submit the responses to the auditor
-	// res_of_decryption_proof, err := certauditor.ZKDecryption_RecordAndVerifyResponses(
-	// 	rG_x,
-	// 	rG_y,
-	// 	challenges,
-	// 	S_x,
-	// 	S_y)
-	// // ZKDecryption_RecordAndVerifyResponses
-	// if err != nil {
-	// 	log.Fatalf("%v", err)
-	// 	return err
-	// }
+	// submit the responses to the auditor
+	certauditor.ZKDecryption_RecordAndVerifyResponses(
+		rG_x,
+		rG_y,
+		challenges,
+		S_x,
+		S_y)
+	// ZKDecryption_RecordAndVerifyResponses
+	if err != nil {
+		log.Fatalf("%v", err)
+		return 0
+	}
 
 	// if !res_of_decryption_proof {
 	// 	// log.Fatalf("Decryption proof failed")
@@ -1214,32 +1217,513 @@ func randomInt(n int) int {
 // 	return -1, errors.New("Shuffle order not found")
 // }
 
+func CheckZKProofForOne(zkproof *auditor.ZKRecords, database *auditor.Database) bool {
+	// verify the zk proof that the client provided
+	uploaded_zk := zkproof
+
+	// encryption check
+	// checks sG=rG+cH
+	proving_client := zkproof.ShufflerID
+	pubkeys_client, err := LocatePublicKeyWithID(proving_client, database.Shuffle_PubKeys)
+	if err != nil {
+		log.Fatalf("%v", err)
+		return false
+	}
+
+	z1s := uploaded_zk.EncryptionProof.Z1s
+	z2s := uploaded_zk.EncryptionProof.Z2s
+	z3s := uploaded_zk.EncryptionProof.Z3s
+
+	// //(S_x)
+	for i := 0; i < len(z1s); i++ {
+		// first challenge
+		X_z1, err := elgamal.ECDH_bytes(uploaded_zk.EncryptionProof.X_originals[i], z1s[i])
+		if err != nil {
+			log.Fatalf("%v", err)
+			// reply.Status = false
+			return false
+		}
+
+		H_z2, err := elgamal.ECDH_bytes(pubkeys_client.H_i, z2s[i])
+		if err != nil {
+			log.Fatalf("%v", err)
+			// reply.Status = false
+			return false
+		}
+
+		first_challenge_left_hand, err := elgamal.Encrypt(X_z1, H_z2)
+		if err != nil {
+			log.Fatalf("%v", err)
+			// reply.Status = false
+			return false
+		}
+
+		X_prime_c, err := elgamal.ECDH_bytes(uploaded_zk.EncryptionProof.X_primes[i], uploaded_zk.EncryptionProof.Cs[i])
+		if err != nil {
+			log.Fatalf("%v", err)
+			// reply.Status = false
+			return false
+		}
+		first_challenge_right_hand, err := elgamal.Encrypt(X_prime_c, uploaded_zk.EncryptionProof.I1s[i])
+		if err != nil {
+			log.Fatalf("%v", err)
+			// reply.Status = false
+			return false
+		}
+
+		if !bytes.Equal(first_challenge_left_hand, first_challenge_right_hand) {
+			//("First challenge failed for client", proving_client)
+			// reply.Status = false
+			return false
+		}
+		// else {
+		// 	//("First challenge PASSED for client", proving_client.ID)
+		// }
+
+		// second challenge
+		Y_z1, err := elgamal.ECDH_bytes(uploaded_zk.EncryptionProof.Y_originals[i], z1s[i])
+		if err != nil {
+			log.Fatalf("%v", err)
+			// reply.Status = false
+			return false
+		}
+
+		H_z3, err := elgamal.ECDH_bytes(pubkeys_client.H_i, z3s[i])
+		if err != nil {
+			log.Fatalf("%v", err)
+			// reply.Status = false
+			return false
+		}
+
+		second_challenge_left_hand, err := elgamal.Encrypt(Y_z1, H_z3)
+		if err != nil {
+			log.Fatalf("%v", err)
+			// reply.Status = false
+			return false
+		}
+
+		Y_prime_c, err := elgamal.ECDH_bytes(uploaded_zk.EncryptionProof.Y_primes[i], uploaded_zk.EncryptionProof.Cs[i])
+		if err != nil {
+			log.Fatalf("%v", err)
+			// reply.Status = false
+			return false
+		}
+		second_challenge_right_hand, err := elgamal.Encrypt(Y_prime_c, uploaded_zk.EncryptionProof.I2s[i])
+		if err != nil {
+			log.Fatalf("%v", err)
+			// reply.Status = false
+			return false
+		}
+
+		if !bytes.Equal(second_challenge_left_hand, second_challenge_right_hand) {
+			//("Second challenge failed for client", proving_client)
+			// reply.Status = false
+			return false
+		}
+		// else {
+		// 	//("Second challenge PASSED for client", proving_client.ID)
+		// }
+
+	}
+
+	//("ZK Proof for encryption is verified for client ", proving_client)
+	// ********* shuffle check
+	n := len(uploaded_zk.ShuffleProof.EntriesAfterShuffle)
+	gs := uploaded_zk.ShuffleProof.RSA_subgroup_generators
+	N := new(big.Int).Mul(uploaded_zk.ShuffleProof.RSA_P, uploaded_zk.ShuffleProof.RSA_Q)
+	// first check
+	ts := uploaded_zk.ShuffleProof.ChanllengesLambda
+	// / sum up fs and check if it is equal to sum of ts
+	sum := big.NewInt(0)
+
+	fs := uploaded_zk.ShuffleProof.Fs
+	small_z := uploaded_zk.ShuffleProof.SmallZ
+	Z_ks := uploaded_zk.ShuffleProof.Z_ks
+	Z_prime := uploaded_zk.ShuffleProof.Z_prime
+	for _, f := range fs {
+		sum.Add(sum, f)
+	}
+	sum_ts := big.NewInt(0)
+	for _, t := range ts {
+		sum_ts.Add(sum_ts, zklib.SetBigIntWithBytes(t))
+	}
+	// //("Sum of fs:", sum)
+	// //("Sum of ts:", sum_ts)
+	if sum.Cmp(sum_ts) == 0 {
+		//("First Test PASSED!!!!!!!!!Sum of fs is equal to sum of ts")
+	} else {
+		//("Sum of fs is not equal to sum of ts")
+		// reply.Status = false
+		return false
+	}
+
+	// second check
+	// calculate f_delta
+	f_delta := big.NewInt(0)
+	// sum of f squared
+	for _, f := range fs {
+		f_delta.Add(f_delta, new(big.Int).Mul(f, f))
+	}
+	// minus sum of ts squared
+	for _, t := range ts {
+		f_delta.Sub(f_delta, new(big.Int).Mul(zklib.SetBigIntWithBytes(t), zklib.SetBigIntWithBytes(t)))
+	}
+
+	// / conducting second check
+	second_condition_right_hand_side := zklib.Generate_commitment(gs, fs, f_delta, small_z.Bytes(), N)
+	// fmt.Print("second_condition_right_hand_side ")
+	// //(second_condition_right_hand_side)
+	second_condition_left_hand_side := new(big.Int).Set(uploaded_zk.ShuffleProof.Commitments[n])
+	for i := 0; i < n; i++ {
+		second_condition_left_hand_side = new(big.Int).Mul(second_condition_left_hand_side, new(big.Int).Exp(uploaded_zk.ShuffleProof.Commitments[i], zklib.SetBigIntWithBytes(ts[i]), N))
+	}
+	second_condition_left_hand_side = new(big.Int).Mod(second_condition_left_hand_side, N)
+
+	// fmt.Print("second_condition_left_hand_side ")
+	// //(second_condition_left_hand_side)
+	// compare the two sides
+	if second_condition_left_hand_side.Cmp(second_condition_right_hand_side) == 0 {
+		//("Second Test PASSED!!!!!!!!!")
+	} else {
+		//("they are not equal! Failed???????")
+		// reply.Status = false
+		return false
+	}
+
+	// third check for the entries **** hardest part brutal
+	// k means the index for individual pieces of the entry
+	for k := 0; k < len(uploaded_zk.ShuffleProof.EntriesAfterShuffle[0]); k++ {
+		third_check_left_hand_side := elgamal.ReturnInfinityPoint()
+		for i := 0; i < n; i++ {
+			C_i := uploaded_zk.ShuffleProof.EntriesAfterShuffle[i][k]
+			C_i_f_i, err := elgamal.ECDH_bytes_P256_arbitrary_scalar_len(C_i, fs[i].Bytes())
+			if err != nil {
+				panic(err)
+			}
+			// check if fs[i] is negative
+			if fs[i].Cmp(big.NewInt(0)) < 0 {
+				// //("detected negative fs[i]")
+				C_i_f_i, err = elgamal.ReturnNegative(C_i_f_i)
+				if err != nil {
+					panic(err)
+				}
+			}
+			third_check_left_hand_side, err = elgamal.Encrypt(third_check_left_hand_side, C_i_f_i)
+			if err != nil {
+				panic(err)
+			}
+		}
+
+		third_check_right_hand_side := uploaded_zk.ShuffleProof.Big_Vs[k]
+		for i := 0; i < n; i++ {
+			c_i := uploaded_zk.ShuffleProof.EntriesBeforeShuffle[i][k]
+			c_i_lambda_i, err := elgamal.ECDH_bytes_P256_arbitrary_scalar_len(c_i, ts[i])
+			if err != nil {
+				panic(err)
+			}
+			third_check_right_hand_side, err = elgamal.Encrypt(third_check_right_hand_side, c_i_lambda_i)
+		}
+		// find the public key of the shuffler
+		for i := 0; i < len(uploaded_zk.ShuffleProof.Updated_Shufflers_info); i++ {
+			updated_shufflers := uploaded_zk.ShuffleProof.Updated_Shufflers_info[i]
+			shuffler_keys, err := LocatePublicKeyWithID(updated_shufflers.ID, database.Shuffle_PubKeys)
+			if err != nil {
+				panic(err)
+			}
+			encrypted_one_with_Z_k, err := elgamal.ECDH_bytes_P256_arbitrary_scalar_len(shuffler_keys.H_i, Z_ks[i])
+			if err != nil {
+				panic(err)
+			}
+			third_check_right_hand_side, err = elgamal.Encrypt(third_check_right_hand_side, encrypted_one_with_Z_k)
+			if err != nil {
+				panic(err)
+			}
+		}
+
+		// compare the two sides
+		if !bytes.Equal(third_check_left_hand_side, third_check_right_hand_side) {
+			//("Third Test FAILED????????", k)
+			// reply.Status = false
+			return false
+		}
+	}
+	//("Third Test concerning the cyphertext shuffling PASSED!!!!!!!!!")
+
+	// fourth check for tag X
+	fourth_condition_left_hand_side := elgamal.ReturnInfinityPoint()
+
+	for i := 0; i < n; i++ {
+		T_i_f_i, err := elgamal.ECDH_bytes_P256_arbitrary_scalar_len(uploaded_zk.ShuffleProof.X_primes_encrypted_and_permutated_tagX[i], fs[i].Bytes())
+		if err != nil {
+			panic(err)
+		}
+		// check if fs[i] is negative
+		if fs[i].Cmp(big.NewInt(0)) < 0 {
+			// //("detected negative fs[i]")
+			T_i_f_i, err = elgamal.ReturnNegative(T_i_f_i)
+			if err != nil {
+				panic(err)
+			}
+		}
+		fourth_condition_left_hand_side, err = elgamal.Encrypt(fourth_condition_left_hand_side, T_i_f_i)
+		if err != nil {
+			panic(err)
+		}
+	}
+	fourth_condition_right_hand_side := uploaded_zk.ShuffleProof.V_prime_X
+	// find the public key of the shuffler
+	shuffler_keys, err := LocatePublicKeyWithID(uploaded_zk.ShufflerID, database.Shuffle_PubKeys)
+	// //("found this guys id ", uploaded_zk.ShufflerID)
+	if err != nil {
+		panic(err)
+	}
+	encrypted_one_with_Z_prime, err := elgamal.ECDH_bytes_P256_arbitrary_scalar_len(shuffler_keys.H_i, Z_prime.Bytes())
+	// //(shuffler_keys.H_i)
+	if err != nil {
+		panic(err)
+	}
+	fourth_condition_right_hand_side, err = elgamal.Encrypt(fourth_condition_right_hand_side, encrypted_one_with_Z_prime)
+	if err != nil {
+		panic(err)
+	}
+	lambdas := ts
+	tags_before_shuffle := uploaded_zk.EncryptionProof.X_primes
+	for i := 0; i < n; i++ {
+		small_c_i_lambda_i, err := elgamal.ECDH_bytes_P256_arbitrary_scalar_len(tags_before_shuffle[i], lambdas[i])
+		if err != nil {
+			panic(err)
+		}
+		fourth_condition_right_hand_side, err = elgamal.Encrypt(fourth_condition_right_hand_side, small_c_i_lambda_i)
+		if err != nil {
+			panic(err)
+		}
+	}
+	// compare the two sides
+	if bytes.Equal(fourth_condition_left_hand_side, fourth_condition_right_hand_side) {
+		//("Fourth Test PASSED!!!!!!!!!")
+	} else {
+		//("Fourth Test FAILED????????")
+		// reply.Status = false
+		return false
+	}
+
+	// fitfh check for tag Y
+	fifth_condition_left_hand_side := elgamal.ReturnInfinityPoint()
+	if err != nil {
+		panic(err)
+	}
+	for i := 0; i < n; i++ {
+		T_i_f_i, err := elgamal.ECDH_bytes_P256_arbitrary_scalar_len(uploaded_zk.ShuffleProof.Y_primes_encrypted_and_permutated_tagY[i], fs[i].Bytes())
+		if err != nil {
+			panic(err)
+		}
+		// check if fs[i] is negative
+		if fs[i].Cmp(big.NewInt(0)) < 0 {
+			// //("detected negative fs[i]")
+			T_i_f_i, err = elgamal.ReturnNegative(T_i_f_i)
+			if err != nil {
+				panic(err)
+			}
+		}
+		fifth_condition_left_hand_side, err = elgamal.Encrypt(fifth_condition_left_hand_side, T_i_f_i)
+		if err != nil {
+			panic(err)
+		}
+	}
+	fifth_condition_right_hand_side := uploaded_zk.ShuffleProof.V_prime_Y
+
+	fifth_condition_right_hand_side, err = elgamal.Encrypt(fifth_condition_right_hand_side, encrypted_one_with_Z_prime)
+	if err != nil {
+		panic(err)
+	}
+	// lambdas := ts
+	tags_before_shuffle_Y := uploaded_zk.EncryptionProof.Y_primes
+	for i := 0; i < n; i++ {
+		small_C_i_lambda_i, err := elgamal.ECDH_bytes_P256_arbitrary_scalar_len(tags_before_shuffle_Y[i], lambdas[i])
+		if err != nil {
+			panic(err)
+		}
+		fifth_condition_right_hand_side, err = elgamal.Encrypt(fifth_condition_right_hand_side, small_C_i_lambda_i)
+		if err != nil {
+			panic(err)
+		}
+	}
+	// compare the two sides
+	if bytes.Equal(fifth_condition_left_hand_side, fifth_condition_right_hand_side) {
+		//("Fifth Test PASSED!!!!!!!!!")
+	} else {
+		//("Fifth Test FAILED????????")
+		// reply.Status = false
+		return false
+	}
+
+	return true
+}
+
+func CheckAuditorProofForOne(zkproof *auditor.ZKRecords, database *auditor.Database) bool {
+	// ********* shuffle check
+	n := len(zkproof.ShuffleProof.EntriesAfterShuffle)
+	gs := zkproof.ShuffleProof.RSA_subgroup_generators
+	N := new(big.Int).Mul(zkproof.ShuffleProof.RSA_P, zkproof.ShuffleProof.RSA_Q)
+	// first check
+	ts := zkproof.ShuffleProof.ChanllengesLambda
+	// / sum up fs and check if it is equal to sum of ts
+	sum := big.NewInt(0)
+
+	fs := zkproof.ShuffleProof.Fs
+	small_z := zkproof.ShuffleProof.SmallZ
+	Z_ks := zkproof.ShuffleProof.Z_ks
+
+	for _, f := range fs {
+		sum.Add(sum, f)
+	}
+	sum_ts := big.NewInt(0)
+	for _, t := range ts {
+		sum_ts.Add(sum_ts, zklib.SetBigIntWithBytes(t))
+	}
+	// //("Sum of fs:", sum)
+	// //("Sum of ts:", sum_ts)
+	if sum.Cmp(sum_ts) == 0 {
+		// fmt.Println("First Test PASSED!!!!!!!!!Sum of fs is equal to sum of ts")
+	} else {
+		fmt.Println("Sum of fs is not equal to sum of ts")
+		// reply.Status = false
+		return false
+	}
+
+	// second check
+	// calculate f_delta
+	f_delta := big.NewInt(0)
+	// sum of f squared
+	for _, f := range fs {
+		f_delta.Add(f_delta, new(big.Int).Mul(f, f))
+	}
+	// minus sum of ts squared
+	for _, t := range ts {
+		f_delta.Sub(f_delta, new(big.Int).Mul(zklib.SetBigIntWithBytes(t), zklib.SetBigIntWithBytes(t)))
+	}
+
+	// / conducting second check
+	second_condition_right_hand_side := zklib.Generate_commitment(gs, fs, f_delta, small_z.Bytes(), N)
+	// fmt.Print("second_condition_right_hand_side ")
+	// //(second_condition_right_hand_side)
+	second_condition_left_hand_side := new(big.Int).Set(zkproof.ShuffleProof.Commitments[n])
+	for i := 0; i < n; i++ {
+		second_condition_left_hand_side = new(big.Int).Mul(second_condition_left_hand_side, new(big.Int).Exp(zkproof.ShuffleProof.Commitments[i], zklib.SetBigIntWithBytes(ts[i]), N))
+	}
+	second_condition_left_hand_side = new(big.Int).Mod(second_condition_left_hand_side, N)
+
+	// fmt.Print("second_condition_left_hand_side ")
+	// //(second_condition_left_hand_side)
+	// compare the two sides
+	if second_condition_left_hand_side.Cmp(second_condition_right_hand_side) == 0 {
+		// fmt.Println("Second Test PASSED!!!!!!!!!")
+	} else {
+		fmt.Println("they are not equal! Failed???????")
+		// reply.Status = false
+		return false
+	}
+
+	// third check for the entries **** hardest part brutal
+	// k means the index for individual pieces of the entry
+	for k := 0; k < len(zkproof.ShuffleProof.EntriesAfterShuffle[0]); k++ {
+		third_check_left_hand_side := elgamal.ReturnInfinityPoint()
+		for i := 0; i < n; i++ {
+			C_i := zkproof.ShuffleProof.EntriesAfterShuffle[i][k]
+			C_i_f_i, err := elgamal.ECDH_bytes_P256_arbitrary_scalar_len(C_i, fs[i].Bytes())
+			if err != nil {
+				panic(err)
+			}
+			// check if fs[i] is negative
+			if fs[i].Cmp(big.NewInt(0)) < 0 {
+				// //("detected negative fs[i]")
+				C_i_f_i, err = elgamal.ReturnNegative(C_i_f_i)
+				if err != nil {
+					panic(err)
+				}
+			}
+			third_check_left_hand_side, err = elgamal.Encrypt(third_check_left_hand_side, C_i_f_i)
+			if err != nil {
+				panic(err)
+			}
+		}
+
+		third_check_right_hand_side := zkproof.ShuffleProof.Big_Vs[k]
+		for i := 0; i < n; i++ {
+			c_i := zkproof.ShuffleProof.EntriesBeforeShuffle[i][k]
+			c_i_lambda_i, err := elgamal.ECDH_bytes_P256_arbitrary_scalar_len(c_i, ts[i])
+			if err != nil {
+				panic(err)
+			}
+			third_check_right_hand_side, err = elgamal.Encrypt(third_check_right_hand_side, c_i_lambda_i)
+		}
+		// find the public key of the shuffler
+		for i := 0; i < len(zkproof.ShuffleProof.Updated_Shufflers_info); i++ {
+			updated_shufflers := zkproof.ShuffleProof.Updated_Shufflers_info[i]
+			shuffler_keys, err := LocatePublicKeyWithID(updated_shufflers.ID, database.Shuffle_PubKeys)
+			if err != nil {
+				panic(err)
+			}
+			encrypted_one_with_Z_k, err := elgamal.ECDH_bytes_P256_arbitrary_scalar_len(shuffler_keys.H_i, Z_ks[i])
+			if err != nil {
+				panic(err)
+			}
+			third_check_right_hand_side, err = elgamal.Encrypt(third_check_right_hand_side, encrypted_one_with_Z_k)
+			if err != nil {
+				panic(err)
+			}
+		}
+
+		// compare the two sides
+		if !bytes.Equal(third_check_left_hand_side, third_check_right_hand_side) {
+			fmt.Println("Third Test FAILED????????", k)
+			// reply.Status = false
+			return false
+		}
+	}
+	// fmt.Println("Third Test concerning the cyphertext shuffling PASSED!!!!!!!!!")
+	return true
+}
+
 func ClientReveal(certauditor *auditor.Auditor, revealingClient *auditor.Client) *auditor.Database {
 	// retrieve everything in the database
-	data, err := ReadDatabase(certauditor)
-	if err != nil {
-		log.Fatalf("Error unmarshaling the JSON: %v", err)
-		return nil
-	}
-	var database auditor.Database
+	database := certauditor.DatabaseR
 
-	// Unmarshal the byte slice into variable
-	err = json.Unmarshal(data, &database)
-	if err != nil {
-		log.Fatalf("Error unmarshaling the JSON: %v", err)
-		return nil
-	}
+	// Unmarshal the byte slice into variabl
 	/// loop to provide info
 	revealRecords := &auditor.DecryptRecords{
 		ShufflerID: revealingClient.ID,
 		Keys:       [][]byte{},
 	}
-
+	var err error
 	// order, err := LocateShuffleOrderWithID(revealingClient.ID, database.Shufflers_info)
 	if err != nil {
 		log.Fatalf("%v", err)
 		return nil
 	}
+
+	zkdatabase := certauditor.ZKDatabaseR
+
+	// zkdatabase.ZK_info[0].ShuffleProof.EntriesAfterShuffle = ExtractCertsFromEntries(database)
+
+	if !CheckZKProofForOne(zkdatabase.ZK_info[0], database) {
+		fmt.Println("ZK proof failed for client")
+		panic("bad")
+		return nil
+	}
+	//("Checking passed for entry ", i)
+
+	// check the auditor zk info
+	// //("Performing verification checks of ", len(auditorZKInfo), " auditor zk proofs for client ", reportingClient.ID)
+	for i := 0; i < len(database.Entries); i++ {
+		if !CheckAuditorProofForOne(zkdatabase.ZK_info[0], database) {
+			fmt.Println("Auditor proof failed for client")
+			panic("bad")
+			return nil
+		}
+		//("Auditor Checking passed for entry ", i)
+	}
+
 	for i := 0; i < len(database.Entries); i++ {
 		// check if this is my entry
 		h_test, err := elgamal.ECDH_bytes(database.Entries[i].G_ri1, revealingClient.ReportingKey.Bytes())
@@ -1283,7 +1767,7 @@ func ClientReveal(certauditor *auditor.Auditor, revealingClient *auditor.Client)
 
 	}
 	database.Decrypt_info = append(database.Decrypt_info, revealRecords)
-	return &database
+	return database
 }
 
 // /////screte sharing ///////

@@ -10,6 +10,7 @@ import (
 	"math/rand"
 	"os"
 	"strconv"
+	"time"
 	"web_cert_reporting_faultTolerantChainingZK_NonInteractive/auditor"
 	"web_cert_reporting_faultTolerantChainingZK_NonInteractive/client"
 
@@ -25,7 +26,7 @@ func main() {
 	numClients, err := strconv.Atoi(args[0])
 	secret_pieces := uint32(numClients - 1)
 	threshold := uint32(8)
-	clients_sit_out := 1
+	clients_sit_out := 0
 	number_of_shufflers := 1
 	shuffle_keyset, err := strconv.Atoi(args[1])
 	CertAuditor := auditor.NewAuditor(database_name, zkdatabase_name, curve, secret_pieces, threshold, curves.P256())
@@ -60,6 +61,9 @@ func main() {
 	zkdatabase := auditor.ZKDatabase{
 		ZK_info: []*auditor.ZKRecords{},
 	}
+
+	CertAuditor.DatabaseR = &database
+	CertAuditor.ZKDatabaseR = &zkdatabase
 	// database.Shuffle_PubKeys
 	fmt.Println("shufflers: ", len(database.Shuffle_PubKeys))
 	for i := 0; i < numClients; i++ {
@@ -68,7 +72,7 @@ func main() {
 			fmt.Println(err)
 			return
 		}
-		auditor.ReportPhase_AppendEntryToDatabase(CertAuditor, entry, shuffle_keyset, i, &database)
+		auditor.ReportPhase_AppendEntryToDatabase(CertAuditor, entry, shuffle_keyset, i)
 		//// client shares the secrete in a encrypted way
 		// client.SecreteShare(CertAuditor, clients[i])
 	}
@@ -93,34 +97,33 @@ func main() {
 		}
 		////***** end of preparing for zk proof
 		// start := time.Now() // Start the timer
-		t := client.ClientShuffle(CertAuditor, clients[i], &database, &zkdatabase, shuffle_keyset, number_of_shufflers)
+		t := client.ClientShuffle(CertAuditor, clients[i], shuffle_keyset, number_of_shufflers)
 		// elapsed := time.Since(start) // Calculate elapsed time
-		if i == number_of_shufflers-1 {
-			fmt.Printf("Sequential Shuffling took %v to execute. with %d clients, under %d keys\n", t, numClients, shuffle_keyset)
-			return
-		}
+		fmt.Printf("Sequential Shuffling took %v to execute. with %d clients, under %d keys\n", t, numClients, shuffle_keyset)
+
 	}
+
 	fmt.Println("Shuffling Complete, Enter Reveal Client Phase")
-	fmt.Println("Making a copy of the shuffled database")
-	auditor.MakeACopyOfDatabase(CertAuditor)
-	fmt.Println("Done!")
-	fmt.Println("Fault Tolerant, Randomly picking clients that will not participate")
-	for i := 0; i < clients_sit_out; i++ {
-		// picking clients to sit out
-		clients_out[i], clients = removeRandomElement(clients)
-	}
+	// fmt.Println("Making a copy of the shuffled database")
+	// auditor.MakeACopyOfDatabase(CertAuditor)
+	// fmt.Println("Done!")
+	// fmt.Println("Fault Tolerant, Randomly picking clients that will not participate")
+	// for i := 0; i < clients_sit_out; i++ {
+	// 	// picking clients to sit out
+	// 	clients_out[i], clients = removeRandomElement(clients)
+	// }
 
 	fmt.Println(len(clients))
-	for i := 0; i < len(clients); i++ {
-		db := client.ClientReveal(CertAuditor, clients[i])
-		err := auditor.WriteRevealInfoToDatabase(CertAuditor, db)
-		if err != nil {
-			fmt.Println(err)
-			return
-		}
+	for i := 0; i < 1; i++ {
+		start := time.Now()
+		client.ClientReveal(CertAuditor, clients[i])
+		elapsed := time.Since(start).Seconds()
+		fmt.Printf("One reveal took %v to execute. with %d clients, under %d keys\n", elapsed, numClients, shuffle_keyset)
+		// err := auditor.WriteRevealInfoToDatabase(CertAuditor, db)
+		fmt.Println("One Client Reveal Complete, Auditor Calculating the entries")
+		return
 	}
 
-	fmt.Println("Client Reveal Complete, Auditor Calculating the entries")
 	result := auditor.CalculateEntries(CertAuditor)
 	// fmt.Println(result)
 	if clients_sit_out > 0 {

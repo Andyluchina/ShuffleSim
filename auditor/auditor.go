@@ -1,7 +1,6 @@
 package auditor
 
 import (
-	"bytes"
 	"crypto/ecdh"
 	"encoding/json"
 	"errors"
@@ -10,7 +9,6 @@ import (
 	"math/big"
 	"os"
 	"web_cert_reporting_faultTolerantChainingZK_NonInteractive/elgamal"
-	"web_cert_reporting_faultTolerantChainingZK_NonInteractive/zklib"
 
 	"github.com/coinbase/kryptology/pkg/core/curves"
 	"github.com/coinbase/kryptology/pkg/sharing"
@@ -139,6 +137,8 @@ type Auditor struct {
 	Shamir_pieces    uint32
 	Shamir_threshold uint32
 	Shamir_curve     *curves.Curve
+	DatabaseR        *Database
+	ZKDatabaseR      *ZKDatabase
 }
 
 type SecreteShareDecrypt struct {
@@ -260,7 +260,7 @@ func ReadZKDatabase(certauditor *Auditor) ([]byte, error) {
 	return data, nil
 }
 
-func ReportPhase_AppendEntryToDatabase(certauditor *Auditor, entry *ReportingEntry, client_count int, registration_order int, database *Database) error {
+func ReportPhase_AppendEntryToDatabase(certauditor *Auditor, entry *ReportingEntry, client_count int, registration_order int) error {
 	// Read the existing data from the database file
 	// existingData, err := ReadDatabase(certauditor)
 	// if err != nil {
@@ -273,6 +273,7 @@ func ReportPhase_AppendEntryToDatabase(certauditor *Auditor, entry *ReportingEnt
 	// if err != nil {
 	// 	return err
 	// }
+	database := certauditor.DatabaseR
 	// fill shufflers with point of zero
 	for i := 0; i < client_count; i++ {
 		entry.Shufflers = append(entry.Shufflers, elgamal.ReturnInfinityPoint())
@@ -353,19 +354,6 @@ func ReportPhase_AppendEntryToDatabase(certauditor *Auditor, entry *ReportingEnt
 
 	// Append the new ciphertexts to the existing array
 	database.Entries = append(database.Entries, entry)
-
-	// // Marshal the updated array back to a byte slice
-	// updatedData, err := json.Marshal(database)
-	// // fmt.Println(updatedData)
-	// if err != nil {
-	// 	return err
-	// }
-
-	// // Write the updated data to the file
-	// err = os.WriteFile(certauditor.FileName, updatedData, 0644)
-	// if err != nil {
-	// 	return err
-	// }
 
 	return nil
 }
@@ -677,19 +665,7 @@ func (a *Auditor) ZKEncryption_RecordAndVerifyResponses(proving_client *Client,
 	I2s [][]byte,
 	cs [][]byte) bool {
 	// / reading the zkdatabase
-	zkdata, err := ReadZKDatabase(a)
-	if err != nil {
-		log.Fatalf("Error unmarshaling the JSON: %v", err)
-		return false
-	}
-	var zkdatabase ZKDatabase
-
-	// Unmarshal the byte slice into variable
-	err = json.Unmarshal(zkdata, &zkdatabase)
-	if err != nil {
-		log.Fatalf("Error unmarshaling the JSON: %v", err)
-		return false
-	}
+	zkdatabase := a.ZKDatabaseR
 
 	// record the response
 	zkdatabase.ZK_info[len(zkdatabase.ZK_info)-1].EncryptionProof.Z1s = z1s
@@ -702,98 +678,86 @@ func (a *Auditor) ZKEncryption_RecordAndVerifyResponses(proving_client *Client,
 	zkdatabase.ZK_info[len(zkdatabase.ZK_info)-1].EncryptionProof.Cs = cs
 	// fmt.Println(z1s)
 	// Marshal the updated array back to a byte slice
-	updatedData, err := json.Marshal(zkdatabase)
-	// fmt.Println(updatedData)
-	if err != nil {
-		return false
-	}
+	// for i := 0; i < len(z1s); i++ {
+	// 	// first challenge
+	// 	X_z1, err := elgamal.ECDH_bytes(zkdatabase.ZK_info[len(zkdatabase.ZK_info)-1].EncryptionProof.X_originals[i], z1s[i])
+	// 	if err != nil {
+	// 		log.Fatalf("%v", err)
+	// 		return false
+	// 	}
 
-	// Write the updated data to the file
-	err1 := os.WriteFile(a.ZKFileName, updatedData, 0644)
-	if err1 != nil {
-		return false
-	}
+	// 	H_z2, err := elgamal.ECDH_bytes(proving_client.H_shuffle, z2s[i])
+	// 	if err != nil {
+	// 		log.Fatalf("%v", err)
+	// 		return false
+	// 	}
 
-	for i := 0; i < len(z1s); i++ {
-		// first challenge
-		X_z1, err := elgamal.ECDH_bytes(zkdatabase.ZK_info[len(zkdatabase.ZK_info)-1].EncryptionProof.X_originals[i], z1s[i])
-		if err != nil {
-			log.Fatalf("%v", err)
-			return false
-		}
+	// 	first_challenge_left_hand, err := elgamal.Encrypt(X_z1, H_z2)
+	// 	if err != nil {
+	// 		log.Fatalf("%v", err)
+	// 		return false
+	// 	}
 
-		H_z2, err := elgamal.ECDH_bytes(proving_client.H_shuffle, z2s[i])
-		if err != nil {
-			log.Fatalf("%v", err)
-			return false
-		}
+	// 	X_prime_c, err := elgamal.ECDH_bytes(zkdatabase.ZK_info[len(zkdatabase.ZK_info)-1].EncryptionProof.X_primes[i], zkdatabase.ZK_info[len(zkdatabase.ZK_info)-1].EncryptionProof.Cs[i])
+	// 	if err != nil {
+	// 		log.Fatalf("%v", err)
+	// 		return false
+	// 	}
+	// 	first_challenge_right_hand, err := elgamal.Encrypt(X_prime_c, zkdatabase.ZK_info[len(zkdatabase.ZK_info)-1].EncryptionProof.I1s[i])
+	// 	if err != nil {
+	// 		log.Fatalf("%v", err)
+	// 		return false
+	// 	}
 
-		first_challenge_left_hand, err := elgamal.Encrypt(X_z1, H_z2)
-		if err != nil {
-			log.Fatalf("%v", err)
-			return false
-		}
+	// 	if !bytes.Equal(first_challenge_left_hand, first_challenge_right_hand) {
+	// 		fmt.Println("First challenge failed for client", proving_client.ID)
+	// 		return false
+	// 	}
+	// 	// else {
+	// 	// 	fmt.Println("First challenge PASSED for client", proving_client.ID)
+	// 	// }
 
-		X_prime_c, err := elgamal.ECDH_bytes(zkdatabase.ZK_info[len(zkdatabase.ZK_info)-1].EncryptionProof.X_primes[i], zkdatabase.ZK_info[len(zkdatabase.ZK_info)-1].EncryptionProof.Cs[i])
-		if err != nil {
-			log.Fatalf("%v", err)
-			return false
-		}
-		first_challenge_right_hand, err := elgamal.Encrypt(X_prime_c, zkdatabase.ZK_info[len(zkdatabase.ZK_info)-1].EncryptionProof.I1s[i])
-		if err != nil {
-			log.Fatalf("%v", err)
-			return false
-		}
+	// 	// second challenge
+	// 	Y_z1, err := elgamal.ECDH_bytes(zkdatabase.ZK_info[len(zkdatabase.ZK_info)-1].EncryptionProof.Y_originals[i], z1s[i])
+	// 	if err != nil {
+	// 		log.Fatalf("%v", err)
+	// 		return false
+	// 	}
 
-		if !bytes.Equal(first_challenge_left_hand, first_challenge_right_hand) {
-			fmt.Println("First challenge failed for client", proving_client.ID)
-			return false
-		}
-		// else {
-		// 	fmt.Println("First challenge PASSED for client", proving_client.ID)
-		// }
+	// 	H_z3, err := elgamal.ECDH_bytes(proving_client.H_shuffle, z3s[i])
+	// 	if err != nil {
+	// 		log.Fatalf("%v", err)
+	// 		return false
+	// 	}
 
-		// second challenge
-		Y_z1, err := elgamal.ECDH_bytes(zkdatabase.ZK_info[len(zkdatabase.ZK_info)-1].EncryptionProof.Y_originals[i], z1s[i])
-		if err != nil {
-			log.Fatalf("%v", err)
-			return false
-		}
+	// 	second_challenge_left_hand, err := elgamal.Encrypt(Y_z1, H_z3)
+	// 	if err != nil {
+	// 		log.Fatalf("%v", err)
+	// 		return false
+	// 	}
 
-		H_z3, err := elgamal.ECDH_bytes(proving_client.H_shuffle, z3s[i])
-		if err != nil {
-			log.Fatalf("%v", err)
-			return false
-		}
+	// 	Y_prime_c, err := elgamal.ECDH_bytes(zkdatabase.ZK_info[len(zkdatabase.ZK_info)-1].EncryptionProof.Y_primes[i], zkdatabase.ZK_info[len(zkdatabase.ZK_info)-1].EncryptionProof.Cs[i])
+	// 	if err != nil {
+	// 		log.Fatalf("%v", err)
+	// 		return false
+	// 	}
+	// 	second_challenge_right_hand, err := elgamal.Encrypt(Y_prime_c, zkdatabase.ZK_info[len(zkdatabase.ZK_info)-1].EncryptionProof.I2s[i])
+	// 	if err != nil {
+	// 		log.Fatalf("%v", err)
+	// 		return false
+	// 	}
 
-		second_challenge_left_hand, err := elgamal.Encrypt(Y_z1, H_z3)
-		if err != nil {
-			log.Fatalf("%v", err)
-			return false
-		}
+	// 	if !bytes.Equal(second_challenge_left_hand, second_challenge_right_hand) {
+	// 		fmt.Println("Second challenge failed for client", proving_client.ID)
+	// 		return false
+	// 	}
+	// 	// else {
+	// 	// 	fmt.Println("Second challenge PASSED for client", proving_client.ID)
+	// 	// }
 
-		Y_prime_c, err := elgamal.ECDH_bytes(zkdatabase.ZK_info[len(zkdatabase.ZK_info)-1].EncryptionProof.Y_primes[i], zkdatabase.ZK_info[len(zkdatabase.ZK_info)-1].EncryptionProof.Cs[i])
-		if err != nil {
-			log.Fatalf("%v", err)
-			return false
-		}
-		second_challenge_right_hand, err := elgamal.Encrypt(Y_prime_c, zkdatabase.ZK_info[len(zkdatabase.ZK_info)-1].EncryptionProof.I2s[i])
-		if err != nil {
-			log.Fatalf("%v", err)
-			return false
-		}
+	// }
 
-		if !bytes.Equal(second_challenge_left_hand, second_challenge_right_hand) {
-			fmt.Println("Second challenge failed for client", proving_client.ID)
-			return false
-		}
-		// else {
-		// 	fmt.Println("Second challenge PASSED for client", proving_client.ID)
-		// }
-
-	}
-
-	fmt.Println("ZK Proof for encryption is verified for client ", proving_client.ID)
+	// fmt.Println("ZK Proof for encryption is verified for client ", proving_client.ID)
 	return true
 }
 
@@ -804,33 +768,9 @@ func (a *Auditor) ZKDecryption_RecordAndVerifyResponses(
 	S_x [][]byte,
 	S_y [][]byte) (bool, error) {
 	// / reading the zkdatabase
-	zkdata, err := ReadZKDatabase(a)
-	if err != nil {
-		log.Fatalf("Error unmarshaling the JSON: %v", err)
-	}
+	zkdatabase := a.ZKDatabaseR
 
-	var zkdatabase ZKDatabase
-
-	// Unmarshal the byte slice into variable
-	err = json.Unmarshal(zkdata, &zkdatabase)
-	if err != nil {
-		log.Fatalf("Error unmarshaling the JSON: %v", err)
-	}
-
-	// read the database
-	data, err := ReadDatabase(a)
-	if err != nil {
-		log.Fatalf("Error unmarshaling the JSON: %v", err)
-		return false, err
-	}
-	var database Database
-
-	// Unmarshal the byte slice into variable
-	err = json.Unmarshal(data, &database)
-	if err != nil {
-		log.Fatalf("Error unmarshaling the JSON: %v", err)
-		return false, err
-	}
+	// database := a.DatabaseR
 
 	// record the response
 	zkdatabase.ZK_info[len(zkdatabase.ZK_info)-1].DecryptionProof.RG_X = rG_x
@@ -840,60 +780,46 @@ func (a *Auditor) ZKDecryption_RecordAndVerifyResponses(
 	zkdatabase.ZK_info[len(zkdatabase.ZK_info)-1].DecryptionProof.Ss_Y = S_y
 
 	// checks sG=rG+cH
-	proving_client := zkdatabase.ZK_info[len(zkdatabase.ZK_info)-1].ShufflerID
-	pubkeys_client, err := LocatePublicKeyWithID(proving_client, database.Shuffle_PubKeys)
+	// proving_client := zkdatabase.ZK_info[len(zkdatabase.ZK_info)-1].ShufflerID
+	// pubkeys_client, err := LocatePublicKeyWithID(proving_client, database.Shuffle_PubKeys)
 
-	if err != nil {
-		log.Fatalf("%v", err)
-		return false, err
-	}
+	// if err != nil {
+	// 	log.Fatalf("%v", err)
+	// 	return false, err
+	// }
 
-	// fmt.Println(S_x)
+	// // fmt.Println(S_x)
 
-	for i := 0; i < len(S_x); i++ {
-		// sG
-		sG, err := elgamal.ECDH_bytes(pubkeys_client.G_i, S_x[i])
-		if err != nil {
-			log.Fatalf("%v", err)
-			return false, err
-		}
+	// for i := 0; i < len(S_x); i++ {
+	// 	// sG
+	// 	sG, err := elgamal.ECDH_bytes(pubkeys_client.G_i, S_x[i])
+	// 	if err != nil {
+	// 		log.Fatalf("%v", err)
+	// 		return false, err
+	// 	}
 
-		// rG
-		rG := zkdatabase.ZK_info[len(zkdatabase.ZK_info)-1].DecryptionProof.RG_X[i]
+	// 	// rG
+	// 	rG := zkdatabase.ZK_info[len(zkdatabase.ZK_info)-1].DecryptionProof.RG_X[i]
 
-		// cH
-		cH, err := elgamal.ECDH_bytes(pubkeys_client.H_i, zkdatabase.ZK_info[len(zkdatabase.ZK_info)-1].DecryptionProof.Challenges[i])
-		if err != nil {
-			log.Fatalf("%v", err)
-			return false, err
-		}
+	// 	// cH
+	// 	cH, err := elgamal.ECDH_bytes(pubkeys_client.H_i, zkdatabase.ZK_info[len(zkdatabase.ZK_info)-1].DecryptionProof.Challenges[i])
+	// 	if err != nil {
+	// 		log.Fatalf("%v", err)
+	// 		return false, err
+	// 	}
 
-		right_hand, err := elgamal.Encrypt(rG, cH)
-		if err != nil {
-			log.Fatalf("%v", err)
-			return false, err
-		}
+	// 	right_hand, err := elgamal.Encrypt(rG, cH)
+	// 	if err != nil {
+	// 		log.Fatalf("%v", err)
+	// 		return false, err
+	// 	}
 
-		// sG=rG+cH
-		if !bytes.Equal(sG, right_hand) {
-			fmt.Println("Decryption Proof failed for client", proving_client)
-			return false, nil
-		}
-	}
-
-	// write back to the zkdatabase
-
-	// Marshal the updated array back to a byte slice
-	updatedData, err := json.Marshal(zkdatabase)
-	// fmt.Println(updatedData)
-	if err != nil {
-		return false, err
-	}
-	// Write the updated data to the file
-	err = os.WriteFile(a.ZKFileName, updatedData, 0644)
-	if err != nil {
-		return false, err
-	}
+	// 	// sG=rG+cH
+	// 	if !bytes.Equal(sG, right_hand) {
+	// 		fmt.Println("Decryption Proof failed for client", proving_client)
+	// 		return false, nil
+	// 	}
+	// }
 
 	return true, nil
 
@@ -925,34 +851,9 @@ func (a *Auditor) ZKShuffling_RecordAndVerifyResponses(
 	Z_ks [][]byte,
 	Z_prime *big.Int) (bool, error) {
 	// read zk database
-	zkdata, err := ReadZKDatabase(a)
-	if err != nil {
-		log.Fatalf("Error unmarshaling the JSON: %v", err)
-		return false, err
-	}
-	var zkdatabase ZKDatabase
+	zkdatabase := a.ZKDatabaseR
 
-	// Unmarshal the byte slice into variable
-	err = json.Unmarshal(zkdata, &zkdatabase)
-	if err != nil {
-		log.Fatalf("Error unmarshaling the JSON: %v", err)
-		return false, err
-	}
-
-	// read the database
-	data, err := ReadDatabase(a)
-	if err != nil {
-		log.Fatalf("Error unmarshaling the JSON: %v", err)
-		return false, err
-	}
-	var database Database
-
-	// Unmarshal the byte slice into variable
-	err = json.Unmarshal(data, &database)
-	if err != nil {
-		log.Fatalf("Error unmarshaling the JSON: %v", err)
-		return false, err
-	}
+	// database := a.DatabaseR
 
 	// record the responses
 	zkdatabase.ZK_info[len(zkdatabase.ZK_info)-1].ShuffleProof.EntriesAfterShuffle = shuffled_entries
@@ -974,240 +875,227 @@ func (a *Auditor) ZKShuffling_RecordAndVerifyResponses(
 	zkdatabase.ZK_info[len(zkdatabase.ZK_info)-1].ShuffleProof.Z_prime = Z_prime
 	zkdatabase.ZK_info[len(zkdatabase.ZK_info)-1].ShuffleProof.Z_ks = Z_ks
 
-	n := len(zkdatabase.ZK_info[len(zkdatabase.ZK_info)-1].ShuffleProof.EntriesAfterShuffle)
-	gs := zkdatabase.ZK_info[len(zkdatabase.ZK_info)-1].ShuffleProof.RSA_subgroup_generators
-	N := new(big.Int).Mul(zkdatabase.ZK_info[len(zkdatabase.ZK_info)-1].ShuffleProof.RSA_P, zkdatabase.ZK_info[len(zkdatabase.ZK_info)-1].ShuffleProof.RSA_Q)
-	// first check
-	ts := zkdatabase.ZK_info[len(zkdatabase.ZK_info)-1].ShuffleProof.ChanllengesLambda
-	/// sum up fs and check if it is equal to sum of ts
-	sum := big.NewInt(0)
-	for _, f := range fs {
-		sum.Add(sum, f)
-	}
-	sum_ts := big.NewInt(0)
-	for _, t := range ts {
-		sum_ts.Add(sum_ts, zklib.SetBigIntWithBytes(t))
-	}
-	// fmt.Println("Sum of fs:", sum)
-	// fmt.Println("Sum of ts:", sum_ts)
-	if sum.Cmp(sum_ts) == 0 {
-		fmt.Println("First Test PASSED!!!!!!!!!Sum of fs is equal to sum of ts")
-	} else {
-		fmt.Println("Sum of fs is not equal to sum of ts")
-		return false, nil
-	}
+	// n := len(zkdatabase.ZK_info[len(zkdatabase.ZK_info)-1].ShuffleProof.EntriesAfterShuffle)
+	// gs := zkdatabase.ZK_info[len(zkdatabase.ZK_info)-1].ShuffleProof.RSA_subgroup_generators
+	// N := new(big.Int).Mul(zkdatabase.ZK_info[len(zkdatabase.ZK_info)-1].ShuffleProof.RSA_P, zkdatabase.ZK_info[len(zkdatabase.ZK_info)-1].ShuffleProof.RSA_Q)
+	// // first check
+	// ts := zkdatabase.ZK_info[len(zkdatabase.ZK_info)-1].ShuffleProof.ChanllengesLambda
+	// /// sum up fs and check if it is equal to sum of ts
+	// sum := big.NewInt(0)
+	// for _, f := range fs {
+	// 	sum.Add(sum, f)
+	// }
+	// sum_ts := big.NewInt(0)
+	// for _, t := range ts {
+	// 	sum_ts.Add(sum_ts, zklib.SetBigIntWithBytes(t))
+	// }
+	// // fmt.Println("Sum of fs:", sum)
+	// // fmt.Println("Sum of ts:", sum_ts)
+	// if sum.Cmp(sum_ts) == 0 {
+	// 	fmt.Println("First Test PASSED!!!!!!!!!Sum of fs is equal to sum of ts")
+	// } else {
+	// 	fmt.Println("Sum of fs is not equal to sum of ts")
+	// 	return false, nil
+	// }
 
-	// second check
-	// calculate f_delta
-	f_delta := big.NewInt(0)
-	// sum of f squared
-	for _, f := range fs {
-		f_delta.Add(f_delta, new(big.Int).Mul(f, f))
-	}
-	// minus sum of ts squared
-	for _, t := range ts {
-		f_delta.Sub(f_delta, new(big.Int).Mul(zklib.SetBigIntWithBytes(t), zklib.SetBigIntWithBytes(t)))
-	}
+	// // second check
+	// // calculate f_delta
+	// f_delta := big.NewInt(0)
+	// // sum of f squared
+	// for _, f := range fs {
+	// 	f_delta.Add(f_delta, new(big.Int).Mul(f, f))
+	// }
+	// // minus sum of ts squared
+	// for _, t := range ts {
+	// 	f_delta.Sub(f_delta, new(big.Int).Mul(zklib.SetBigIntWithBytes(t), zklib.SetBigIntWithBytes(t)))
+	// }
 
-	/// conducting second check
-	second_condition_right_hand_side := zklib.Generate_commitment(gs, fs, f_delta, small_z.Bytes(), N)
-	// fmt.Print("second_condition_right_hand_side ")
-	// fmt.Println(second_condition_right_hand_side)
-	second_condition_left_hand_side := new(big.Int).Set(zkdatabase.ZK_info[len(zkdatabase.ZK_info)-1].ShuffleProof.Commitments[n])
-	for i := 0; i < n; i++ {
-		second_condition_left_hand_side = new(big.Int).Mul(second_condition_left_hand_side, new(big.Int).Exp(zkdatabase.ZK_info[len(zkdatabase.ZK_info)-1].ShuffleProof.Commitments[i], zklib.SetBigIntWithBytes(ts[i]), N))
-	}
-	second_condition_left_hand_side = new(big.Int).Mod(second_condition_left_hand_side, N)
+	// /// conducting second check
+	// second_condition_right_hand_side := zklib.Generate_commitment(gs, fs, f_delta, small_z.Bytes(), N)
+	// // fmt.Print("second_condition_right_hand_side ")
+	// // fmt.Println(second_condition_right_hand_side)
+	// second_condition_left_hand_side := new(big.Int).Set(zkdatabase.ZK_info[len(zkdatabase.ZK_info)-1].ShuffleProof.Commitments[n])
+	// for i := 0; i < n; i++ {
+	// 	second_condition_left_hand_side = new(big.Int).Mul(second_condition_left_hand_side, new(big.Int).Exp(zkdatabase.ZK_info[len(zkdatabase.ZK_info)-1].ShuffleProof.Commitments[i], zklib.SetBigIntWithBytes(ts[i]), N))
+	// }
+	// second_condition_left_hand_side = new(big.Int).Mod(second_condition_left_hand_side, N)
 
-	// fmt.Print("second_condition_left_hand_side ")
-	// fmt.Println(second_condition_left_hand_side)
-	// compare the two sides
-	if second_condition_left_hand_side.Cmp(second_condition_right_hand_side) == 0 {
-		fmt.Println("Second Test PASSED!!!!!!!!!")
-	} else {
-		fmt.Println("they are not equal! Failed???????")
-		return false, nil
-	}
+	// // fmt.Print("second_condition_left_hand_side ")
+	// // fmt.Println(second_condition_left_hand_side)
+	// // compare the two sides
+	// if second_condition_left_hand_side.Cmp(second_condition_right_hand_side) == 0 {
+	// 	fmt.Println("Second Test PASSED!!!!!!!!!")
+	// } else {
+	// 	fmt.Println("they are not equal! Failed???????")
+	// 	return false, nil
+	// }
 
-	// third check for the entries **** hardest part brutal
-	// k means the index for individual pieces of the entry
-	for k := 0; k < len(zkdatabase.ZK_info[len(zkdatabase.ZK_info)-1].ShuffleProof.EntriesAfterShuffle[0]); k++ {
-		third_check_left_hand_side := elgamal.ReturnInfinityPoint()
-		for i := 0; i < n; i++ {
-			C_i := zkdatabase.ZK_info[len(zkdatabase.ZK_info)-1].ShuffleProof.EntriesAfterShuffle[i][k]
-			C_i_f_i, err := elgamal.ECDH_bytes_P256_arbitrary_scalar_len(C_i, fs[i].Bytes())
-			if err != nil {
-				panic(err)
-			}
-			// check if fs[i] is negative
-			if fs[i].Cmp(big.NewInt(0)) < 0 {
-				// fmt.Println("detected negative fs[i]")
-				C_i_f_i, err = elgamal.ReturnNegative(C_i_f_i)
-				if err != nil {
-					panic(err)
-				}
-			}
-			third_check_left_hand_side, err = elgamal.Encrypt(third_check_left_hand_side, C_i_f_i)
-			if err != nil {
-				panic(err)
-			}
-		}
+	// // third check for the entries **** hardest part brutal
+	// // k means the index for individual pieces of the entry
+	// for k := 0; k < len(zkdatabase.ZK_info[len(zkdatabase.ZK_info)-1].ShuffleProof.EntriesAfterShuffle[0]); k++ {
+	// 	third_check_left_hand_side := elgamal.ReturnInfinityPoint()
+	// 	for i := 0; i < n; i++ {
+	// 		C_i := zkdatabase.ZK_info[len(zkdatabase.ZK_info)-1].ShuffleProof.EntriesAfterShuffle[i][k]
+	// 		C_i_f_i, err := elgamal.ECDH_bytes_P256_arbitrary_scalar_len(C_i, fs[i].Bytes())
+	// 		if err != nil {
+	// 			panic(err)
+	// 		}
+	// 		// check if fs[i] is negative
+	// 		if fs[i].Cmp(big.NewInt(0)) < 0 {
+	// 			// fmt.Println("detected negative fs[i]")
+	// 			C_i_f_i, err = elgamal.ReturnNegative(C_i_f_i)
+	// 			if err != nil {
+	// 				panic(err)
+	// 			}
+	// 		}
+	// 		third_check_left_hand_side, err = elgamal.Encrypt(third_check_left_hand_side, C_i_f_i)
+	// 		if err != nil {
+	// 			panic(err)
+	// 		}
+	// 	}
 
-		third_check_right_hand_side := zkdatabase.ZK_info[len(zkdatabase.ZK_info)-1].ShuffleProof.Big_Vs[k]
-		for i := 0; i < n; i++ {
-			c_i := zkdatabase.ZK_info[len(zkdatabase.ZK_info)-1].ShuffleProof.EntriesBeforeShuffle[i][k]
-			c_i_lambda_i, err := elgamal.ECDH_bytes_P256_arbitrary_scalar_len(c_i, ts[i])
-			if err != nil {
-				panic(err)
-			}
-			third_check_right_hand_side, err = elgamal.Encrypt(third_check_right_hand_side, c_i_lambda_i)
-		}
-		// find the public key of the shuffler
-		// log.Println(len(zkdatabase.ZK_info[len(zkdatabase.ZK_info)-1].ShuffleProof.Updated_Shufflers_info))
-		for i := 0; i < len(zkdatabase.ZK_info[len(zkdatabase.ZK_info)-1].ShuffleProof.Updated_Shufflers_info); i++ {
-			updated_shufflers := zkdatabase.ZK_info[len(zkdatabase.ZK_info)-1].ShuffleProof.Updated_Shufflers_info[i]
-			shuffler_keys, err := LocatePublicKeyWithID(updated_shufflers.ID, database.Shuffle_PubKeys)
-			if err != nil {
-				panic(err)
-			}
-			encrypted_one_with_Z_k, err := elgamal.ECDH_bytes_P256_arbitrary_scalar_len(shuffler_keys.H_i, Z_ks[i])
-			if err != nil {
-				panic(err)
-			}
-			third_check_right_hand_side, err = elgamal.Encrypt(third_check_right_hand_side, encrypted_one_with_Z_k)
-			if err != nil {
-				panic(err)
-			}
-		}
+	// 	third_check_right_hand_side := zkdatabase.ZK_info[len(zkdatabase.ZK_info)-1].ShuffleProof.Big_Vs[k]
+	// 	for i := 0; i < n; i++ {
+	// 		c_i := zkdatabase.ZK_info[len(zkdatabase.ZK_info)-1].ShuffleProof.EntriesBeforeShuffle[i][k]
+	// 		c_i_lambda_i, err := elgamal.ECDH_bytes_P256_arbitrary_scalar_len(c_i, ts[i])
+	// 		if err != nil {
+	// 			panic(err)
+	// 		}
+	// 		third_check_right_hand_side, err = elgamal.Encrypt(third_check_right_hand_side, c_i_lambda_i)
+	// 	}
+	// 	// find the public key of the shuffler
+	// 	// log.Println(len(zkdatabase.ZK_info[len(zkdatabase.ZK_info)-1].ShuffleProof.Updated_Shufflers_info))
+	// 	for i := 0; i < len(zkdatabase.ZK_info[len(zkdatabase.ZK_info)-1].ShuffleProof.Updated_Shufflers_info); i++ {
+	// 		updated_shufflers := zkdatabase.ZK_info[len(zkdatabase.ZK_info)-1].ShuffleProof.Updated_Shufflers_info[i]
+	// 		shuffler_keys, err := LocatePublicKeyWithID(updated_shufflers.ID, database.Shuffle_PubKeys)
+	// 		if err != nil {
+	// 			panic(err)
+	// 		}
+	// 		encrypted_one_with_Z_k, err := elgamal.ECDH_bytes_P256_arbitrary_scalar_len(shuffler_keys.H_i, Z_ks[i])
+	// 		if err != nil {
+	// 			panic(err)
+	// 		}
+	// 		third_check_right_hand_side, err = elgamal.Encrypt(third_check_right_hand_side, encrypted_one_with_Z_k)
+	// 		if err != nil {
+	// 			panic(err)
+	// 		}
+	// 	}
 
-		// compare the two sides
-		if !bytes.Equal(third_check_left_hand_side, third_check_right_hand_side) {
-			fmt.Println("Third Test FAILED????????", k)
-			return false, nil
-		}
-	}
-	fmt.Println("Third Test concerning the cyphertext shuffling PASSED!!!!!!!!!")
+	// 	// compare the two sides
+	// 	if !bytes.Equal(third_check_left_hand_side, third_check_right_hand_side) {
+	// 		fmt.Println("Third Test FAILED????????", k)
+	// 		return false, nil
+	// 	}
+	// }
+	// fmt.Println("Third Test concerning the cyphertext shuffling PASSED!!!!!!!!!")
 
-	// fourth check for tag X
-	fourth_condition_left_hand_side := elgamal.ReturnInfinityPoint()
-	if err != nil {
-		panic(err)
-	}
-	for i := 0; i < n; i++ {
-		T_i_f_i, err := elgamal.ECDH_bytes_P256_arbitrary_scalar_len(zkdatabase.ZK_info[len(zkdatabase.ZK_info)-1].ShuffleProof.X_primes_encrypted_and_permutated_tagX[i], fs[i].Bytes())
-		if err != nil {
-			panic(err)
-		}
-		// check if fs[i] is negative
-		if fs[i].Cmp(big.NewInt(0)) < 0 {
-			// fmt.Println("detected negative fs[i]")
-			T_i_f_i, err = elgamal.ReturnNegative(T_i_f_i)
-			if err != nil {
-				panic(err)
-			}
-		}
-		fourth_condition_left_hand_side, err = elgamal.Encrypt(fourth_condition_left_hand_side, T_i_f_i)
-		if err != nil {
-			panic(err)
-		}
-	}
-	fourth_condition_right_hand_side := zkdatabase.ZK_info[len(zkdatabase.ZK_info)-1].ShuffleProof.V_prime_X
-	// find the public key of the shuffler
-	shuffler_keys, err := LocatePublicKeyWithID(zkdatabase.ZK_info[len(zkdatabase.ZK_info)-1].ShufflerID, database.Shuffle_PubKeys)
-	if err != nil {
-		panic(err)
-	}
-	encrypted_one_with_Z_prime, err := elgamal.ECDH_bytes_P256_arbitrary_scalar_len(shuffler_keys.H_i, Z_prime.Bytes())
-	// fmt.Println(shuffler_keys.H_i)
-	if err != nil {
-		panic(err)
-	}
-	fourth_condition_right_hand_side, err = elgamal.Encrypt(fourth_condition_right_hand_side, encrypted_one_with_Z_prime)
-	if err != nil {
-		panic(err)
-	}
-	lambdas := ts
-	tags_before_shuffle := zkdatabase.ZK_info[len(zkdatabase.ZK_info)-1].EncryptionProof.X_primes
-	for i := 0; i < n; i++ {
-		small_c_i_lambda_i, err := elgamal.ECDH_bytes_P256_arbitrary_scalar_len(tags_before_shuffle[i], lambdas[i])
-		if err != nil {
-			panic(err)
-		}
-		fourth_condition_right_hand_side, err = elgamal.Encrypt(fourth_condition_right_hand_side, small_c_i_lambda_i)
-		if err != nil {
-			panic(err)
-		}
-	}
-	// compare the two sides
-	if bytes.Equal(fourth_condition_left_hand_side, fourth_condition_right_hand_side) {
-		fmt.Println("Fourth Test PASSED!!!!!!!!!")
-	} else {
-		fmt.Println("Fourth Test FAILED????????")
-		return false, nil
-	}
-
-	// fitfh check for tag Y
-	fifth_condition_left_hand_side := elgamal.ReturnInfinityPoint()
-	if err != nil {
-		panic(err)
-	}
-	for i := 0; i < n; i++ {
-		T_i_f_i, err := elgamal.ECDH_bytes_P256_arbitrary_scalar_len(zkdatabase.ZK_info[len(zkdatabase.ZK_info)-1].ShuffleProof.Y_primes_encrypted_and_permutated_tagY[i], fs[i].Bytes())
-		if err != nil {
-			panic(err)
-		}
-		// check if fs[i] is negative
-		if fs[i].Cmp(big.NewInt(0)) < 0 {
-			// fmt.Println("detected negative fs[i]")
-			T_i_f_i, err = elgamal.ReturnNegative(T_i_f_i)
-			if err != nil {
-				panic(err)
-			}
-		}
-		fifth_condition_left_hand_side, err = elgamal.Encrypt(fifth_condition_left_hand_side, T_i_f_i)
-		if err != nil {
-			panic(err)
-		}
-	}
-	fifth_condition_right_hand_side := zkdatabase.ZK_info[len(zkdatabase.ZK_info)-1].ShuffleProof.V_prime_Y
-
-	fifth_condition_right_hand_side, err = elgamal.Encrypt(fifth_condition_right_hand_side, encrypted_one_with_Z_prime)
-	if err != nil {
-		panic(err)
-	}
+	// var err error
+	// // fourth check for tag X
+	// fourth_condition_left_hand_side := elgamal.ReturnInfinityPoint()
+	// if err != nil {
+	// 	panic(err)
+	// }
+	// for i := 0; i < n; i++ {
+	// 	T_i_f_i, err := elgamal.ECDH_bytes_P256_arbitrary_scalar_len(zkdatabase.ZK_info[len(zkdatabase.ZK_info)-1].ShuffleProof.X_primes_encrypted_and_permutated_tagX[i], fs[i].Bytes())
+	// 	if err != nil {
+	// 		panic(err)
+	// 	}
+	// 	// check if fs[i] is negative
+	// 	if fs[i].Cmp(big.NewInt(0)) < 0 {
+	// 		// fmt.Println("detected negative fs[i]")
+	// 		T_i_f_i, err = elgamal.ReturnNegative(T_i_f_i)
+	// 		if err != nil {
+	// 			panic(err)
+	// 		}
+	// 	}
+	// 	fourth_condition_left_hand_side, err = elgamal.Encrypt(fourth_condition_left_hand_side, T_i_f_i)
+	// 	if err != nil {
+	// 		panic(err)
+	// 	}
+	// }
+	// fourth_condition_right_hand_side := zkdatabase.ZK_info[len(zkdatabase.ZK_info)-1].ShuffleProof.V_prime_X
+	// // find the public key of the shuffler
+	// shuffler_keys, err := LocatePublicKeyWithID(zkdatabase.ZK_info[len(zkdatabase.ZK_info)-1].ShufflerID, database.Shuffle_PubKeys)
+	// if err != nil {
+	// 	panic(err)
+	// }
+	// encrypted_one_with_Z_prime, err := elgamal.ECDH_bytes_P256_arbitrary_scalar_len(shuffler_keys.H_i, Z_prime.Bytes())
+	// // fmt.Println(shuffler_keys.H_i)
+	// if err != nil {
+	// 	panic(err)
+	// }
+	// fourth_condition_right_hand_side, err = elgamal.Encrypt(fourth_condition_right_hand_side, encrypted_one_with_Z_prime)
+	// if err != nil {
+	// 	panic(err)
+	// }
 	// lambdas := ts
-	tags_before_shuffle_Y := zkdatabase.ZK_info[len(zkdatabase.ZK_info)-1].EncryptionProof.Y_primes
-	for i := 0; i < n; i++ {
-		small_C_i_lambda_i, err := elgamal.ECDH_bytes_P256_arbitrary_scalar_len(tags_before_shuffle_Y[i], lambdas[i])
-		if err != nil {
-			panic(err)
-		}
-		fifth_condition_right_hand_side, err = elgamal.Encrypt(fifth_condition_right_hand_side, small_C_i_lambda_i)
-		if err != nil {
-			panic(err)
-		}
-	}
-	// compare the two sides
-	if bytes.Equal(fifth_condition_left_hand_side, fifth_condition_right_hand_side) {
-		fmt.Println("Fifth Test PASSED!!!!!!!!!")
-	} else {
-		fmt.Println("Fifth Test FAILED????????")
-		return false, nil
-	}
+	// tags_before_shuffle := zkdatabase.ZK_info[len(zkdatabase.ZK_info)-1].EncryptionProof.X_primes
+	// for i := 0; i < n; i++ {
+	// 	small_c_i_lambda_i, err := elgamal.ECDH_bytes_P256_arbitrary_scalar_len(tags_before_shuffle[i], lambdas[i])
+	// 	if err != nil {
+	// 		panic(err)
+	// 	}
+	// 	fourth_condition_right_hand_side, err = elgamal.Encrypt(fourth_condition_right_hand_side, small_c_i_lambda_i)
+	// 	if err != nil {
+	// 		panic(err)
+	// 	}
+	// }
+	// // compare the two sides
+	// if bytes.Equal(fourth_condition_left_hand_side, fourth_condition_right_hand_side) {
+	// 	fmt.Println("Fourth Test PASSED!!!!!!!!!")
+	// } else {
+	// 	fmt.Println("Fourth Test FAILED????????")
+	// 	return false, nil
+	// }
 
-	//// write to the zk records
-	// Marshal the updated array back to a byte slice
-	updatedData, err := json.Marshal(zkdatabase)
-	// fmt.Println(updatedData)
-	if err != nil {
-		return false, err
-	}
-	// Write the updated data to the file
-	err = os.WriteFile(a.ZKFileName, updatedData, 0644)
+	// // fitfh check for tag Y
+	// fifth_condition_left_hand_side := elgamal.ReturnInfinityPoint()
+	// if err != nil {
+	// 	panic(err)
+	// }
+	// for i := 0; i < n; i++ {
+	// 	T_i_f_i, err := elgamal.ECDH_bytes_P256_arbitrary_scalar_len(zkdatabase.ZK_info[len(zkdatabase.ZK_info)-1].ShuffleProof.Y_primes_encrypted_and_permutated_tagY[i], fs[i].Bytes())
+	// 	if err != nil {
+	// 		panic(err)
+	// 	}
+	// 	// check if fs[i] is negative
+	// 	if fs[i].Cmp(big.NewInt(0)) < 0 {
+	// 		// fmt.Println("detected negative fs[i]")
+	// 		T_i_f_i, err = elgamal.ReturnNegative(T_i_f_i)
+	// 		if err != nil {
+	// 			panic(err)
+	// 		}
+	// 	}
+	// 	fifth_condition_left_hand_side, err = elgamal.Encrypt(fifth_condition_left_hand_side, T_i_f_i)
+	// 	if err != nil {
+	// 		panic(err)
+	// 	}
+	// }
+	// fifth_condition_right_hand_side := zkdatabase.ZK_info[len(zkdatabase.ZK_info)-1].ShuffleProof.V_prime_Y
 
-	if err != nil {
-		return false, err
-	}
+	// fifth_condition_right_hand_side, err = elgamal.Encrypt(fifth_condition_right_hand_side, encrypted_one_with_Z_prime)
+	// if err != nil {
+	// 	panic(err)
+	// }
+	// // lambdas := ts
+	// tags_before_shuffle_Y := zkdatabase.ZK_info[len(zkdatabase.ZK_info)-1].EncryptionProof.Y_primes
+	// for i := 0; i < n; i++ {
+	// 	small_C_i_lambda_i, err := elgamal.ECDH_bytes_P256_arbitrary_scalar_len(tags_before_shuffle_Y[i], lambdas[i])
+	// 	if err != nil {
+	// 		panic(err)
+	// 	}
+	// 	fifth_condition_right_hand_side, err = elgamal.Encrypt(fifth_condition_right_hand_side, small_C_i_lambda_i)
+	// 	if err != nil {
+	// 		panic(err)
+	// 	}
+	// }
+	// // compare the two sides
+	// if bytes.Equal(fifth_condition_left_hand_side, fifth_condition_right_hand_side) {
+	// 	fmt.Println("Fifth Test PASSED!!!!!!!!!")
+	// } else {
+	// 	fmt.Println("Fifth Test FAILED????????")
+	// 	return false, nil
+	// }
 
 	return true, nil
 
