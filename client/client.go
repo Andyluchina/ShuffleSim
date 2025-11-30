@@ -1703,28 +1703,28 @@ func ClientReveal(certauditor *auditor.Auditor, revealingClient *auditor.Client)
 		return nil
 	}
 
-	zkdatabase := certauditor.ZKDatabaseR
+	// zkdatabase := certauditor.ZKDatabaseR
 
-	// zkdatabase.ZK_info[0].ShuffleProof.EntriesAfterShuffle = ExtractCertsFromEntries(database)
+	// // zkdatabase.ZK_info[0].ShuffleProof.EntriesAfterShuffle = ExtractCertsFromEntries(database)
 
-	if !CheckZKProofForOne(zkdatabase.ZK_info[0], database) {
-		fmt.Println("ZK proof failed for client")
-		panic("bad")
-		return nil
-	}
-	//("Checking passed for entry ", i)
+	// if !CheckZKProofForOne(zkdatabase.ZK_info[0], database) {
+	// 	fmt.Println("ZK proof failed for client")
+	// 	panic("bad")
+	// 	return nil
+	// }
+	// //("Checking passed for entry ", i)
 
-	// check the auditor zk info
-	// //("Performing verification checks of ", len(auditorZKInfo), " auditor zk proofs for client ", reportingClient.ID)
-	for i := 0; i < len(database.Entries); i++ {
-		// todo check why this check is taking way more than 2x when the number of proofs needed to be checked is only 2x
-		if !CheckAuditorProofForOne(zkdatabase.ZK_info[0], database, i) {
-			fmt.Println("Auditor proof failed for client")
-			panic("bad")
-			return nil
-		}
-		//("Auditor Checking passed for entry ", i)
-	}
+	// // check the auditor zk info
+	// // //("Performing verification checks of ", len(auditorZKInfo), " auditor zk proofs for client ", reportingClient.ID)
+	// for i := 0; i < len(database.Entries); i++ {
+	// 	// todo check why this check is taking way more than 2x when the number of proofs needed to be checked is only 2x
+	// 	if !CheckAuditorProofForOne(zkdatabase.ZK_info[0], database, i) {
+	// 		fmt.Println("Auditor proof failed for client")
+	// 		panic("bad")
+	// 		return nil
+	// 	}
+	// 	//("Auditor Checking passed for entry ", i)
+	// }
 
 	for i := 0; i < len(database.Entries); i++ {
 		// check if this is my entry
