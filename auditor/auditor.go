@@ -315,7 +315,7 @@ func ReportPhase_AppendEntryToDatabase(certauditor *Auditor, entry *ReportingEnt
 	if !real {
 
 		database := certauditor.DatabaseR
-		fmt.Println("not real", len(database.Entries))
+		// fmt.Println("not real", len(database.Entries))
 		// fill shufflers with point of zero
 		for i := 0; i < client_count; i++ {
 			entry.Shufflers = append(entry.Shufflers, elgamal.ReturnInfinityPoint())
