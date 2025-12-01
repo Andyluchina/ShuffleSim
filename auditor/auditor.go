@@ -313,7 +313,9 @@ func ReportPhase_AppendEntryToDatabase(certauditor *Auditor, entry *ReportingEnt
 	// }
 
 	if !real {
+
 		database := certauditor.DatabaseR
+		fmt.Println("not real", len(database.Entries))
 		// fill shufflers with point of zero
 		for i := 0; i < client_count; i++ {
 			entry.Shufflers = append(entry.Shufflers, elgamal.ReturnInfinityPoint())
@@ -322,6 +324,7 @@ func ReportPhase_AppendEntryToDatabase(certauditor *Auditor, entry *ReportingEnt
 
 		return 0
 	}
+	fmt.Println("Reaal real")
 	database := certauditor.DatabaseR
 	// fill shufflers with point of zero
 	for i := 0; i < client_count; i++ {
@@ -338,10 +341,10 @@ func ReportPhase_AppendEntryToDatabase(certauditor *Auditor, entry *ReportingEnt
 	permutationMatrix := zklib.GenerateIdentityMatrix(registration_order)
 	inverse_permutationMatrix := permutationMatrix
 	database.Shufflers_info = []*ShuffleRecords{}
-	for i := 0; i < registration_order; i++ {
+	for i := 0; i < 1; i++ {
 		// should just include everyone
 		client_info := &ShuffleRecords{
-			ID: i,
+			ID: registration_order,
 		}
 		database.Shufflers_info = append(database.Shufflers_info, client_info)
 	}
@@ -350,7 +353,7 @@ func ReportPhase_AppendEntryToDatabase(certauditor *Auditor, entry *ReportingEnt
 	// randomize the entries/ encrypt the entries
 	for i := 0; i < len(database.Entries); i++ {
 		rk := [][]byte{}
-		for j := 0; j < registration_order; j++ {
+		for j := 0; j < len(database.Shufflers_info); j++ {
 			shuffler_info := database.Shuffle_PubKeys[j]
 			keys, err := LocatePublicKeyWithID(shuffler_info.ID, database.Shuffle_PubKeys)
 			if err != nil {
