@@ -324,7 +324,7 @@ func ReportPhase_AppendEntryToDatabase(certauditor *Auditor, entry *ReportingEnt
 
 		return 0
 	}
-	fmt.Println("Reaal real")
+	// fmt.Println("Reaal real")
 	database := certauditor.DatabaseR
 	// fill shufflers with point of zero
 	for i := 0; i < client_count; i++ {
@@ -368,7 +368,7 @@ func ReportPhase_AppendEntryToDatabase(certauditor *Auditor, entry *ReportingEnt
 				return 0
 			}
 			/// changing the shuffler entry
-			order := j
+			order := registration_order
 			database.Entries[i].Shufflers[order], err = elgamal.Encrypt(database.Entries[i].Shufflers[order], g_r_i_prime)
 			if err != nil {
 				log.Fatalf("%v", err)
